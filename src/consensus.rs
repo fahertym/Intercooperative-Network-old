@@ -28,6 +28,7 @@ pub struct Vote {
     pub weight: f64,
 }
 
+#[derive(Clone, Default)]
 pub struct PoCConsensus {
     reputation_scores: ReputationScores,
     min_reputation_threshold: f64,
@@ -43,23 +44,24 @@ pub struct PoCConsensus {
 
 impl PoCConsensus {
     pub fn new(min_reputation_threshold: f64, vote_threshold: f64) -> Self {
-        PoCConsensus {
+        Self {
             reputation_scores: HashMap::new(),
             min_reputation_threshold,
-            max_reputation: 10.0,
+            max_reputation: 100.0, // Assuming a default max reputation value
             votes: HashMap::new(),
             vote_threshold,
-            last_decay: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
-            decay_period: 86400, // 24 hours in seconds
-            decay_factor: 0.95,
-            rehabilitation_rate: 0.01,
-            slashing_severity: HashMap::from([
-                ("minor_offense".to_string(), 0.1),
-                ("major_offense".to_string(), 0.5),
-                ("critical_offense".to_string(), 1.0),
-            ]),
+            last_decay: 0,
+            decay_period: 86400, // Assuming a default decay period (1 day in seconds)
+            decay_factor: 0.95, // Assuming a default decay factor
+            rehabilitation_rate: 0.1, // Assuming a default rehabilitation rate
+            slashing_severity: HashMap::new(),
         }
     }
+
+    pub fn set_vote_threshold(&mut self, new_threshold: f64) {
+        self.vote_threshold = new_threshold.max(0.0).min(1.0);
+    }
+        
 
     pub fn add_member(&mut self, member_id: String) {
         self.reputation_scores.insert(member_id, 1.0);
@@ -91,7 +93,7 @@ impl PoCConsensus {
 
         let total_reputation: f64 = eligible_members.iter().map(|(_, &score)| score).sum();
         let mut rng = rand::thread_rng();
-        let selection_point = rng.gen_range(0.0..total_reputation);
+        let selection_point = rng.gen_range(0.0, total_reputation);
 
         let mut cumulative_reputation = 0.0;
         for (member, &score) in eligible_members {
@@ -119,8 +121,12 @@ impl PoCConsensus {
                 .map(|v| v.weight)
                 .sum();
 
-            weighted_votes_in_favor / total_weight >= self.vote_threshold
+            let is_valid = weighted_votes_in_favor / total_weight >= self.vote_threshold;
+            println!("Block {} validity check: {} (votes in favor: {:.2}, total votes: {:.2}, threshold: {:.2})",
+                     block_index, is_valid, weighted_votes_in_favor, total_weight, self.vote_threshold);
+            is_valid
         } else {
+            println!("Block {} has no votes", block_index);
             false
         }
     }

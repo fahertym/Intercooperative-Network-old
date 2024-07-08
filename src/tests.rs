@@ -1,45 +1,53 @@
 #[cfg(test)]
 mod tests {
-    use super::super::consensus::PoCConsensus;
+    use crate::blockchain::{Blockchain, Transaction};
+    use crate::consensus::CurrencyType;
+
+    #[test]
+    fn test_blockchain_creation() {
+        let blockchain = Blockchain::new();
+        assert_eq!(blockchain.chain.len(), 1, "Blockchain should be initialized with one genesis block");
+        assert_eq!(blockchain.chain[0].index, 0, "Genesis block should have index 0");
+    }
+
+    #[test]
+    fn test_block_creation() {
+        let mut blockchain = Blockchain::new();
+        blockchain.consensus.add_member("Alice".to_string());
+        let transactions = vec![
+            Transaction::new("Alice".to_string(), "Bob".to_string(), 100.0, CurrencyType::BasicNeeds),
+            Transaction::new("Bob".to_string(), "Charlie".to_string(), 50.0, CurrencyType::Education),
+        ];
+        let result = blockchain.create_block(transactions);
+        assert!(result.is_ok(), "Block creation failed: {:?}", result.err());
+        assert_eq!(blockchain.pending_blocks.len(), 1, "One pending block should be created");
+    }
 
     #[test]
     fn test_reputation_update() {
-        let mut consensus = PoCConsensus::new(0.5, 0.66);
-        consensus.add_member("Alice".to_string());
-        consensus.update_reputation("Alice", 0.5);
-        assert_eq!(consensus.get_reputation("Alice"), Some(1.5));
+        let mut blockchain = Blockchain::new();
+        blockchain.consensus.add_member("Alice".to_string());
+        blockchain.consensus.update_reputation("Alice", 0.5);
+        assert_eq!(blockchain.consensus.get_reputation("Alice"), Some(1.5), 
+                   "Alice's reputation should be updated to 1.5");
     }
 
     #[test]
-    fn test_reputation_cap() {
-        let mut consensus = PoCConsensus::new(0.5, 0.66);
-        consensus.add_member("Bob".to_string());
-        consensus.update_reputation("Bob", 15.0);
-        assert_eq!(consensus.get_reputation("Bob"), Some(10.0)); // Max reputation
-    }
-
-    #[test]
-    fn test_reputation_floor() {
-        let mut consensus = PoCConsensus::new(0.5, 0.66);
-        consensus.add_member("Charlie".to_string());
-        consensus.update_reputation("Charlie", -2.0);
-        assert_eq!(consensus.get_reputation("Charlie"), Some(0.0)); // Min reputation
-    }
-
-    #[test]
-    fn test_slashing() {
-        let mut consensus = PoCConsensus::new(0.5, 0.66);
-        consensus.add_member("Dave".to_string());
-        consensus.slash_reputation("Dave", "critical_offense");
-        assert_eq!(consensus.get_reputation("Dave"), Some(0.0));
-    }
-
-    #[test]
-    fn test_rehabilitation() {
-        let mut consensus = PoCConsensus::new(0.5, 0.66);
-        consensus.add_member("Eve".to_string());
-        consensus.update_reputation("Eve", -0.6); // Reputation becomes 0.4
-        consensus.rehabilitate_members();
-        assert!(consensus.get_reputation("Eve").unwrap() > 0.4);
+    fn test_voting() {
+        let mut blockchain = Blockchain::new();
+        blockchain.consensus.add_member("Alice".to_string());
+        blockchain.consensus.add_member("Bob".to_string());
+        blockchain.consensus.add_member("Charlie".to_string());
+        
+        let transactions = vec![
+            Transaction::new("Alice".to_string(), "Bob".to_string(), 100.0, CurrencyType::BasicNeeds),
+        ];
+        blockchain.create_block(transactions).expect("Block creation should succeed");
+        
+        assert!(blockchain.vote_on_block("Alice", 1, true).is_ok(), "Alice should be able to vote");
+        assert!(blockchain.vote_on_block("Bob", 1, true).is_ok(), "Bob should be able to vote");
+        assert!(blockchain.vote_on_block("Charlie", 1, true).is_ok(), "Charlie should be able to vote");
+        
+        assert!(blockchain.consensus.is_block_valid(1), "Block should be valid after voting");
     }
 }

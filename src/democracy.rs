@@ -2,6 +2,15 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};
 
+// NEW CODE BLOCK 1: START
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum ProposalCategory {
+    Constitutional,
+    Economic,
+    Technical,
+}
+// NEW CODE BLOCK 1: END
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Proposal {
     pub id: String,
@@ -12,6 +21,11 @@ pub struct Proposal {
     pub voting_ends_at: DateTime<Utc>,
     pub status: ProposalStatus,
     pub proposal_type: ProposalType,
+    // NEW CODE BLOCK 2: START
+    pub category: ProposalCategory,
+    pub required_quorum: f64,
+    pub execution_timestamp: Option<DateTime<Utc>>,
+    // NEW CODE BLOCK 2: END
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -38,9 +52,32 @@ pub struct Vote {
     pub timestamp: DateTime<Utc>,
 }
 
+// NEW CODE BLOCK 3: START
+pub trait ExecutableProposal {
+    fn execute(&self, blockchain: &mut Blockchain) -> Result<(), String>;
+}
+
+pub struct ParameterChangeProposal {
+    pub parameter_name: String,
+    pub new_value: String,
+}
+
+impl ExecutableProposal for ParameterChangeProposal {
+    fn execute(&self, blockchain: &mut Blockchain) -> Result<(), String> {
+        // Implementation for changing a blockchain parameter
+        // This is a placeholder and should be implemented based on your specific blockchain structure
+        println!("Changing parameter {} to {}", self.parameter_name, self.new_value);
+        Ok(())
+    }
+}
+// NEW CODE BLOCK 3: END
+
 pub struct DemocraticSystem {
     proposals: HashMap<String, Proposal>,
     votes: HashMap<String, Vec<Vote>>,
+    // NEW CODE BLOCK 4: START
+    executable_proposals: HashMap<String, Box<dyn ExecutableProposal>>,
+    // NEW CODE BLOCK 4: END
 }
 
 impl DemocraticSystem {
@@ -48,10 +85,17 @@ impl DemocraticSystem {
         DemocraticSystem {
             proposals: HashMap::new(),
             votes: HashMap::new(),
+            // NEW CODE BLOCK 5: START
+            executable_proposals: HashMap::new(),
+            // NEW CODE BLOCK 5: END
         }
     }
 
-    pub fn create_proposal(&mut self, title: String, description: String, proposer: String, voting_duration: Duration, proposal_type: ProposalType) -> String {
+    // NEW CODE BLOCK 6: START
+    pub fn create_proposal(&mut self, title: String, description: String, proposer: String, 
+                           voting_duration: Duration, proposal_type: ProposalType,
+                           category: ProposalCategory, required_quorum: f64, 
+                           execution_timestamp: Option<DateTime<Utc>>) -> String {
         let id = format!("prop_{}", Utc::now().timestamp());
         let proposal = Proposal {
             id: id.clone(),
@@ -62,10 +106,14 @@ impl DemocraticSystem {
             voting_ends_at: Utc::now() + voting_duration,
             status: ProposalStatus::Active,
             proposal_type,
+            category,
+            required_quorum,
+            execution_timestamp,
         };
         self.proposals.insert(id.clone(), proposal);
         id
     }
+    // NEW CODE BLOCK 6: END
 
     pub fn vote(&mut self, voter: String, proposal_id: String, in_favor: bool, weight: f64) -> Result<(), String> {
         let proposal = self.proposals.get(&proposal_id).ok_or("Proposal not found")?;
@@ -90,6 +138,7 @@ impl DemocraticSystem {
         Ok(())
     }
 
+    // NEW CODE BLOCK 7: START
     pub fn tally_votes(&mut self, proposal_id: &str) -> Result<(), String> {
         let proposal = self.proposals.get_mut(proposal_id).ok_or("Proposal not found")?;
         
@@ -106,6 +155,11 @@ impl DemocraticSystem {
         let total_weight: f64 = votes.iter().map(|v| v.weight).sum();
         let weight_in_favor: f64 = votes.iter().filter(|v| v.in_favor).map(|v| v.weight).sum();
 
+        if total_weight < proposal.required_quorum {
+            proposal.status = ProposalStatus::Rejected;
+            return Ok(());
+        }
+
         if weight_in_favor / total_weight > 0.5 {
             proposal.status = ProposalStatus::Passed;
         } else {
@@ -114,6 +168,7 @@ impl DemocraticSystem {
 
         Ok(())
     }
+    // NEW CODE BLOCK 7: END
 
     pub fn get_proposal(&self, proposal_id: &str) -> Option<&Proposal> {
         self.proposals.get(proposal_id)
@@ -139,4 +194,26 @@ impl DemocraticSystem {
         proposal.status = ProposalStatus::Implemented;
         Ok(())
     }
+
+    // NEW CODE BLOCK 8: START
+    pub fn add_executable_proposal(&mut self, proposal_id: String, executable: Box<dyn ExecutableProposal>) {
+        self.executable_proposals.insert(proposal_id, executable);
+    }
+
+    pub fn execute_proposal(&mut self, proposal_id: &str, blockchain: &mut Blockchain) -> Result<(), String> {
+        let proposal = self.proposals.get(proposal_id).ok_or("Proposal not found")?;
+        
+        if proposal.status != ProposalStatus::Passed {
+            return Err("Proposal has not passed".to_string());
+        }
+
+        if let Some(executable) = self.executable_proposals.get(proposal_id) {
+            executable.execute(blockchain)?;
+            self.mark_as_implemented(proposal_id)?;
+            Ok(())
+        } else {
+            Err("No executable found for this proposal".to_string())
+        }
+    }
+    // NEW CODE BLOCK 8: END
 }
