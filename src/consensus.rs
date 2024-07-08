@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rand::Rng;
 
+#[derive(Clone, Debug)]
 pub enum CurrencyType {
     BasicNeeds,
     Education,
