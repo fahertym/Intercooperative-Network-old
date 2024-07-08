@@ -1,14 +1,14 @@
-use rand::Rng;
 use std::collections::HashMap;
+use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 type ReputationScores = HashMap<String, f64>;
 
 #[derive(Clone, Debug)]
 pub struct Vote {
-    voter: String,
-    in_favor: bool,
-    weight: f64,
+    pub voter: String,
+    pub in_favor: bool,
+    pub weight: f64,
 }
 
 pub struct PoCConsensus {
@@ -52,7 +52,6 @@ impl PoCConsensus {
         let old_reputation = self.reputation_scores.get(member_id).cloned().unwrap_or(0.0);
         let new_reputation = (old_reputation + delta).max(0.0).min(self.max_reputation);
         self.reputation_scores.insert(member_id.to_string(), new_reputation);
-        println!("Reputation update for {}: {} -> {} (delta: {})", member_id, old_reputation, new_reputation, delta);
     }
 
     pub fn get_reputation(&self, member_id: &str) -> Option<f64> {
@@ -90,7 +89,7 @@ impl PoCConsensus {
 
     pub fn submit_vote(&mut self, block_index: u64, voter: String, in_favor: bool) {
         if self.is_eligible(&voter) {
-            let weight = (self.get_reputation(&voter).unwrap_or(0.0).sqrt() * 10.0).ceil() / 10.0;
+            let weight = self.get_reputation(&voter).unwrap_or(0.0);
             self.votes.entry(block_index).or_insert_with(Vec::new).push(Vote { voter, in_favor, weight });
         }
     }
@@ -117,7 +116,7 @@ impl PoCConsensus {
         };
 
         for voter in voters_to_reward {
-            self.update_reputation(&voter, 0.05); // Reward for voting
+            self.update_reputation(&voter, 0.05);
         }
 
         self.votes.remove(&block_index);
@@ -125,34 +124,7 @@ impl PoCConsensus {
 
     pub fn slash_reputation(&mut self, member_id: &str, offense: &str) {
         let slash_amount = self.slashing_severity.get(offense).cloned().unwrap_or(0.1);
-        let old_reputation = self.get_reputation(member_id).unwrap_or(0.0);
         self.update_reputation(member_id, -slash_amount);
-        let new_reputation = self.get_reputation(member_id).unwrap_or(0.0);
-        println!("Slashed {} reputation from {} for {}. Reputation: {} -> {}", slash_amount, member_id, offense, old_reputation, new_reputation);
-    }
-
-    pub fn rehabilitate_members(&mut self) {
-        for (member_id, score) in self.reputation_scores.iter_mut() {
-            if *score < self.min_reputation_threshold {
-                let old_score = *score;
-                *score += self.rehabilitation_rate;
-                *score = score.min(self.min_reputation_threshold);
-                println!("Rehabilitated {}: {} -> {}", member_id, old_score, *score);
-            }
-        }
-    }
-
-    pub fn challenge_slashing(&mut self, member_id: &str, challenge_votes: usize) {
-        let current_reputation = self.get_reputation(member_id).unwrap_or(0.0);
-        let challenge_success_threshold = self.reputation_scores.len() / 2;
-
-        if challenge_votes > challenge_success_threshold {
-            let reputation_restore = self.max_reputation / 2.0;
-            self.update_reputation(member_id, reputation_restore);
-            println!("Slashing challenge successful for {}. Reputation restored by {}", member_id, reputation_restore);
-        } else {
-            println!("Slashing challenge failed for {}. Reputation remains at {}", member_id, current_reputation);
-        }
     }
 
     pub fn decay_reputations(&mut self) {
@@ -162,7 +134,19 @@ impl PoCConsensus {
                 *score *= self.decay_factor;
             }
             self.last_decay = now;
-            println!("Decayed all reputation scores by factor {}", self.decay_factor);
         }
+    }
+
+    pub fn rehabilitate_members(&mut self) {
+        for (_, score) in self.reputation_scores.iter_mut() {
+            if *score < self.min_reputation_threshold {
+                *score += self.rehabilitation_rate;
+                *score = score.min(self.min_reputation_threshold);
+            }
+        }
+    }
+
+    pub fn get_all_reputations(&self) -> &ReputationScores {
+        &self.reputation_scores
     }
 }
