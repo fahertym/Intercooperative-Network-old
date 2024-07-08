@@ -33,9 +33,10 @@ fn main() {
     blockchain.check_for_slashing();
 
     // Simulate a slashing challenge
-    blockchain.consensus.challenge_slashing("Charlie", 3); // 3 votes to challenge (success)
-    blockchain.consensus.challenge_slashing("Dave", 1); // 1 vote to challenge (failure)
-
+    let charlie_challenge = blockchain.consensus.challenge_slashing("Charlie", 3);
+println!("Charlie's challenge result: {}", charlie_challenge);
+let dave_challenge = blockchain.consensus.challenge_slashing("Dave", 1);
+println!("Dave's challenge result: {}", dave_challenge);
     // Final maintenance
     blockchain.maintain_blockchain();
 
