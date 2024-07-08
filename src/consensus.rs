@@ -91,7 +91,7 @@ impl PoCConsensus {
 
         let total_reputation: f64 = eligible_members.iter().map(|(_, &score)| score).sum();
         let mut rng = rand::thread_rng();
-        let selection_point = rng.gen_range(0.0, total_reputation);
+        let selection_point = rng.gen_range(0.0..total_reputation);
 
         let mut cumulative_reputation = 0.0;
         for (member, &score) in eligible_members {
