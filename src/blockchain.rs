@@ -1,5 +1,13 @@
 use crate::consensus::{PoCConsensus, CurrencyType};
-use sha2::{Sha256, Digest};
+
+#[derive(Clone, Debug)]
+pub struct Block {
+    pub index: u64,
+    pub transactions: Vec<Transaction>,
+    pub previous_hash: String,
+    pub hash: String,
+    pub proposer: String,
+}
 
 #[derive(Clone, Debug)]
 pub struct Transaction {
@@ -9,51 +17,18 @@ pub struct Transaction {
     pub currency_type: CurrencyType,
 }
 
-#[derive(Clone, Debug)]
-pub struct Block {
-    pub index: u64,
-    pub timestamp: i64,
-    pub transactions: Vec<Transaction>,
-    pub previous_hash: String,
-    pub hash: String,
-    pub proposer: String,
-}
-
-impl Block {
-    pub fn new(index: u64, transactions: Vec<Transaction>, previous_hash: String, proposer: String) -> Self {
-        let timestamp = chrono::Utc::now().timestamp();
-        let mut block = Block {
-            index,
-            timestamp,
-            transactions,
-            previous_hash,
-            hash: String::new(),
-            proposer,
-        };
-        block.hash = block.calculate_hash();
-        block
-    }
-
-    fn calculate_hash(&self) -> String {
-        let mut hasher = Sha256::new();
-        let data = format!("{}{}{}{}{}", self.index, self.timestamp, self.transactions.len(), self.previous_hash, self.proposer);
-        hasher.update(data);
-        format!("{:x}", hasher.finalize())
-    }
-}
-
 pub struct Blockchain {
     pub chain: Vec<Block>,
+    pub pending_transactions: Vec<Transaction>,
     pub consensus: PoCConsensus,
-    pending_blocks: Vec<Block>,
 }
 
 impl Blockchain {
     pub fn new() -> Self {
         Blockchain {
-            chain: vec![Block::new(0, Vec::new(), String::from("0"), String::from("Genesis"))],
+            chain: Vec::new(),
+            pending_transactions: Vec::new(),
             consensus: PoCConsensus::new(0.5, 0.66),
-            pending_blocks: Vec::new(),
         }
     }
 
@@ -68,13 +43,13 @@ impl Blockchain {
             previous_block.hash.clone(),
             proposer.clone(),
         );
-        self.pending_blocks.push(new_block);
+        self.pending_transactions.push(new_block);
         self.consensus.update_reputation(&proposer, 0.1);
         Ok(())
     }
 
     pub fn vote_on_block(&mut self, voter: &str, block_index: usize, in_favor: bool) -> Result<(), String> {
-        if block_index == 0 || block_index > self.pending_blocks.len() {
+        if block_index == 0 || block_index > self.pending_transactions.len() {
             return Err("Invalid block index".to_string());
         }
         if !self.consensus.is_eligible(voter) {
@@ -85,11 +60,11 @@ impl Blockchain {
     }
 
     pub fn finalize_block(&mut self, block_index: usize) {
-        if block_index == 0 || block_index > self.pending_blocks.len() {
+        if block_index == 0 || block_index > self.pending_transactions.len() {
             return;
         }
         if self.consensus.is_block_valid(block_index as u64) {
-            let block = self.pending_blocks.remove(block_index - 1);
+            let block = self.pending_transactions.remove(block_index - 1);
             self.chain.push(block);
             self.consensus.finalize_block(block_index as u64);
         }
@@ -112,7 +87,7 @@ impl Blockchain {
     }
 
     pub fn check_for_slashing(&mut self) {
-        for block in &self.pending_blocks {
+        for block in &self.pending_transactions {
             for transaction in &block.transactions {
                 if transaction.amount < 0.0 {
                     self.consensus.slash_reputation(&block.proposer, "critical_offense");
@@ -120,5 +95,25 @@ impl Blockchain {
                 }
             }
         }
+    }
+}
+
+impl Block {
+    pub fn new(index: u64, transactions: Vec<Transaction>, previous_hash: String, proposer: String) -> Self {
+        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let mut block = Block {
+            index,
+            transactions,
+            previous_hash,
+            hash: String::new(),
+            proposer,
+        };
+        block.hash = block.calculate_hash();
+        block
+    }
+
+    fn calculate_hash(&self) -> String {
+        // Implement hash calculation logic here
+        "dummy_hash".to_string()
     }
 }
