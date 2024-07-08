@@ -1,15 +1,19 @@
 use crate::consensus::{PoCConsensus, CurrencyType};
+use sha2::{Sha256, Digest};
+use serde::{Serialize, Deserialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Block {
     pub index: u64,
+    pub timestamp: u64,
     pub transactions: Vec<Transaction>,
     pub previous_hash: String,
     pub hash: String,
     pub proposer: String,
+    pub nonce: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
     pub from: String,
     pub to: String,
@@ -23,13 +27,53 @@ pub struct Blockchain {
     pub consensus: PoCConsensus,
 }
 
+impl Block {
+    pub fn new(index: u64, transactions: Vec<Transaction>, previous_hash: String, proposer: String) -> Self {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        
+        let mut block = Block {
+            index,
+            timestamp,
+            transactions,
+            previous_hash,
+            hash: String::new(),
+            proposer,
+            nonce: 0,
+        };
+        
+        block.hash = block.calculate_hash();
+        block
+    }
+
+    pub fn calculate_hash(&self) -> String {
+        let mut hasher = Sha256::new();
+        let block_data = serde_json::to_string(&self).unwrap();
+        hasher.update(block_data);
+        format!("{:x}", hasher.finalize())
+    }
+}
+
 impl Blockchain {
     pub fn new() -> Self {
-        Blockchain {
+        let mut blockchain = Blockchain {
             chain: Vec::new(),
             pending_blocks: Vec::new(),
             consensus: PoCConsensus::new(0.5, 0.66),
-        }
+        };
+
+        // Create and add genesis block
+        let genesis_block = Block::new(
+            0,
+            Vec::new(),
+            String::from("0"),
+            String::from("Genesis")
+        );
+        blockchain.chain.push(genesis_block);
+
+        blockchain
     }
 
     pub fn create_block(&mut self, transactions: Vec<(String, String, f64, CurrencyType)>) -> Result<(), String> {
@@ -76,16 +120,6 @@ impl Blockchain {
         self.check_for_slashing();
     }
 
-    pub fn propose_block(&mut self, _transaction: String) -> Result<(), String> {
-        let transactions = vec![(
-            "System".to_string(),
-            "User".to_string(),
-            0.0,
-            CurrencyType::BasicNeeds
-        )];
-        self.create_block(transactions)
-    }
-
     pub fn check_for_slashing(&mut self) {
         for block in &self.pending_blocks {
             for transaction in &block.transactions {
@@ -95,25 +129,5 @@ impl Blockchain {
                 }
             }
         }
-    }
-}
-
-impl Block {
-    pub fn new(index: u64, transactions: Vec<Transaction>, previous_hash: String, proposer: String) -> Self {
-        let _timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-        let mut block = Block {
-            index,
-            transactions,
-            previous_hash,
-            hash: String::new(),
-            proposer,
-        };
-        block.hash = block.calculate_hash();
-        block
-    }
-
-    fn calculate_hash(&self) -> String {
-        // Implement hash calculation logic here
-        "dummy_hash".to_string()
     }
 }
