@@ -2,14 +2,21 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rand::Rng;
 use serde::{Serialize, Deserialize};
+use std::fmt;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum CurrencyType {
     BasicNeeds,
     Education,
     Environmental,
     Community,
     Volunteer,
+}
+
+impl fmt::Display for CurrencyType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 type ReputationScores = HashMap<String, f64>;
@@ -84,7 +91,7 @@ impl PoCConsensus {
 
         let total_reputation: f64 = eligible_members.iter().map(|(_, &score)| score).sum();
         let mut rng = rand::thread_rng();
-        let selection_point = rng.gen_range(0.0..total_reputation);
+        let selection_point = rng.gen_range(0.0, total_reputation);
 
         let mut cumulative_reputation = 0.0;
         for (member, &score) in eligible_members {
@@ -119,16 +126,12 @@ impl PoCConsensus {
     }
 
     pub fn finalize_block(&mut self, block_index: u64) {
-        let voters_to_reward: Vec<String> = if let Some(votes) = self.votes.get(&block_index) {
-            votes.iter().map(|v| v.voter.clone()).collect()
-        } else {
-            Vec::new()
-        };
-
-        for voter in voters_to_reward {
-            self.update_reputation(&voter, 0.05);
+        if let Some(votes) = self.votes.get(&block_index) {
+            let voters_to_reward: Vec<String> = votes.iter().map(|v| v.voter.clone()).collect();
+            for voter in voters_to_reward {
+                self.update_reputation(&voter, 0.05);
+            }
         }
-
         self.votes.remove(&block_index);
     }
 
@@ -153,6 +156,21 @@ impl PoCConsensus {
                 *score += self.rehabilitation_rate;
                 *score = score.min(self.min_reputation_threshold);
             }
+        }
+    }
+
+    pub fn challenge_slashing(&mut self, member_id: &str, challenge_votes: usize) -> bool {
+        let current_reputation = self.get_reputation(member_id).unwrap_or(0.0);
+        let challenge_success_threshold = self.reputation_scores.len() / 2;
+
+        if challenge_votes > challenge_success_threshold {
+            let reputation_restore = self.max_reputation / 2.0;
+            self.update_reputation(member_id, reputation_restore);
+            println!("Slashing challenge successful for {}. Reputation restored by {}", member_id, reputation_restore);
+            true
+        } else {
+            println!("Slashing challenge failed for {}. Reputation remains at {}", member_id, current_reputation);
+            false
         }
     }
 }
