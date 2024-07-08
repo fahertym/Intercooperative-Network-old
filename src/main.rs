@@ -1,8 +1,8 @@
 mod blockchain;
 mod consensus;
-mod tests;
 
 use crate::blockchain::Blockchain;
+use crate::consensus::CurrencyType;
 
 fn main() {
     let mut blockchain = Blockchain::new();
@@ -15,18 +15,25 @@ fn main() {
 
     // Simulate block creation and voting
     for i in 1..=20 {
-        blockchain.propose_block(format!("Transaction {}", i)).unwrap();
-        blockchain.vote_on_block(i, "Alice".to_string(), true).unwrap();
-        blockchain.vote_on_block(i, "Bob".to_string(), true).unwrap();
-        blockchain.vote_on_block(i, "Charlie".to_string(), i % 2 == 0).unwrap(); // Charlie votes against every other block
-        blockchain.vote_on_block(i, "Dave".to_string(), i % 3 == 0).unwrap(); // Dave votes for every third block
-        blockchain.finalize_blocks();
-        
-        // Simulate maintenance every 5 blocks
+        let transactions = vec![
+            ("System".to_string(), format!("User{}", i % 3 + 1), 100.0, CurrencyType::BasicNeeds),
+            (format!("User{}", i % 3 + 1), format!("User{}", (i + 1) % 3 + 1), 50.0, CurrencyType::Education),
+        ];
+
+        // Create a block
+        blockchain.create_block(transactions).expect("Failed to create block");
+
+        // Now vote on the block
+        blockchain.vote_on_block("Alice", i, true).expect("Failed to vote on block");
+        blockchain.vote_on_block("Bob", i, i % 2 == 0).expect("Failed to vote on block");
+        blockchain.vote_on_block("Charlie", i, i % 3 == 0).expect("Failed to vote on block");
+
+        blockchain.finalize_block(i);
+
         if i % 5 == 0 {
             blockchain.maintain_blockchain();
         }
-    }
+    }  
 
     // Simulate a malicious proposal and slashing
     blockchain.propose_block("malicious transaction".to_string()).unwrap();
@@ -34,9 +41,10 @@ fn main() {
 
     // Simulate a slashing challenge
     let charlie_challenge = blockchain.consensus.challenge_slashing("Charlie", 3);
-println!("Charlie's challenge result: {}", charlie_challenge);
-let dave_challenge = blockchain.consensus.challenge_slashing("Dave", 1);
-println!("Dave's challenge result: {}", dave_challenge);
+    println!("Charlie's challenge result: {}", charlie_challenge);
+    let dave_challenge = blockchain.consensus.challenge_slashing("Dave", 1);
+    println!("Dave's challenge result: {}", dave_challenge);
+
     // Final maintenance
     blockchain.maintain_blockchain();
 

@@ -1,6 +1,14 @@
 use std::collections::HashMap;
-use rand::Rng;
 use std::time::{SystemTime, UNIX_EPOCH};
+use rand::Rng;
+
+pub enum CurrencyType {
+    BasicNeeds,
+    Education,
+    Environmental,
+    Community,
+    Volunteer,
+}
 
 type ReputationScores = HashMap<String, f64>;
 
@@ -146,10 +154,6 @@ impl PoCConsensus {
         }
     }
 
-    pub fn get_all_reputations(&self) -> &ReputationScores {
-        &self.reputation_scores
-    }
-
     pub fn challenge_slashing(&mut self, member_id: &str, challenge_votes: usize) -> bool {
         let current_reputation = self.get_reputation(member_id).unwrap_or(0.0);
         let challenge_success_threshold = self.reputation_scores.len() / 2;
@@ -163,5 +167,10 @@ impl PoCConsensus {
             println!("Slashing challenge failed for {}. Reputation remains at {}", member_id, current_reputation);
             false
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn get_all_reputations(&self) -> &ReputationScores {
+        &self.reputation_scores
     }
 }
