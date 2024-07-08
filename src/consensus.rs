@@ -2,14 +2,21 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rand::Rng;
 use serde::{Serialize, Deserialize};
+use std::fmt;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum CurrencyType {
     BasicNeeds,
     Education,
     Environmental,
     Community,
     Volunteer,
+}
+
+impl fmt::Display for CurrencyType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 type ReputationScores = HashMap<String, f64>;
@@ -155,4 +162,45 @@ impl PoCConsensus {
             }
         }
     }
+
+    pub fn challenge_slashing(&mut self, member_id: &str, challenge_votes: usize) -> bool {
+        let current_reputation = self.get_reputation(member_id).unwrap_or(0.0);
+        let challenge_success_threshold = self.reputation_scores.len() / 2;
+
+        if challenge_votes > challenge_success_threshold {
+            let reputation_restore = self.max_reputation / 2.0;
+            self.update_reputation(member_id, reputation_restore);
+            println!("Slashing challenge successful for {}. Reputation restored by {}", member_id, reputation_restore);
+            true
+        } else {
+            println!("Slashing challenge failed for {}. Reputation remains at {}", member_id, current_reputation);
+            false
+        }
+    }
+
+    pub fn select_proposer(&self) -> Option<String> {
+        let eligible_members: Vec<_> = self.reputation_scores
+            .iter()
+            .filter(|(_, &score)| score >= self.min_reputation_threshold)
+            .collect();
+
+        if eligible_members.is_empty() {
+            return None;
+        }
+
+        let total_reputation: f64 = eligible_members.iter().map(|(_, &score)| score).sum();
+        let mut rng = rand::thread_rng();
+        let selection_point = rng.gen_range(0.0, total_reputation);
+
+        let mut cumulative_reputation = 0.0;
+        for (member, &score) in eligible_members {
+            cumulative_reputation += score;
+            if cumulative_reputation >= selection_point {
+                return Some(member.clone());
+            }
+        }
+
+        None
+    }
+
 }
