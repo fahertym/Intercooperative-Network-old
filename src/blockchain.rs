@@ -19,7 +19,7 @@ pub struct Transaction {
 
 pub struct Blockchain {
     pub chain: Vec<Block>,
-    pub pending_transactions: Vec<Transaction>,
+    pub pending_blocks: Vec<Block>,
     pub consensus: PoCConsensus,
 }
 
@@ -27,7 +27,7 @@ impl Blockchain {
     pub fn new() -> Self {
         Blockchain {
             chain: Vec::new(),
-            pending_transactions: Vec::new(),
+            pending_blocks: Vec::new(),
             consensus: PoCConsensus::new(0.5, 0.66),
         }
     }
@@ -43,13 +43,13 @@ impl Blockchain {
             previous_block.hash.clone(),
             proposer.clone(),
         );
-        self.pending_transactions.push(new_block);
+        self.pending_blocks.push(new_block);
         self.consensus.update_reputation(&proposer, 0.1);
         Ok(())
     }
 
     pub fn vote_on_block(&mut self, voter: &str, block_index: usize, in_favor: bool) -> Result<(), String> {
-        if block_index == 0 || block_index > self.pending_transactions.len() {
+        if block_index == 0 || block_index > self.pending_blocks.len() {
             return Err("Invalid block index".to_string());
         }
         if !self.consensus.is_eligible(voter) {
@@ -60,11 +60,11 @@ impl Blockchain {
     }
 
     pub fn finalize_block(&mut self, block_index: usize) {
-        if block_index == 0 || block_index > self.pending_transactions.len() {
+        if block_index == 0 || block_index > self.pending_blocks.len() {
             return;
         }
         if self.consensus.is_block_valid(block_index as u64) {
-            let block = self.pending_transactions.remove(block_index - 1);
+            let block = self.pending_blocks.remove(block_index - 1);
             self.chain.push(block);
             self.consensus.finalize_block(block_index as u64);
         }
@@ -76,7 +76,7 @@ impl Blockchain {
         self.check_for_slashing();
     }
 
-    pub fn propose_block(&mut self, transaction: String) -> Result<(), String> {
+    pub fn propose_block(&mut self, _transaction: String) -> Result<(), String> {
         let transactions = vec![(
             "System".to_string(),
             "User".to_string(),
@@ -87,7 +87,7 @@ impl Blockchain {
     }
 
     pub fn check_for_slashing(&mut self) {
-        for block in &self.pending_transactions {
+        for block in &self.pending_blocks {
             for transaction in &block.transactions {
                 if transaction.amount < 0.0 {
                     self.consensus.slash_reputation(&block.proposer, "critical_offense");
@@ -100,7 +100,7 @@ impl Blockchain {
 
 impl Block {
     pub fn new(index: u64, transactions: Vec<Transaction>, previous_hash: String, proposer: String) -> Self {
-        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let _timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         let mut block = Block {
             index,
             transactions,
