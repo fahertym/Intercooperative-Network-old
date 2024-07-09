@@ -84,7 +84,7 @@ impl IcnNode {
         if let Some(interfaces) = self.pit.get_incoming_interfaces(&name) {
             for interface in interfaces {
                 if interface != incoming_interface {
-                    if let Some(&addr) = self.interfaces.get(interface) {
+                    if let Some(&addr) = self.interfaces.get(&interface) {
                         actions.push((addr, packet.clone()));
                     }
                 }
