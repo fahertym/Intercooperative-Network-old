@@ -64,7 +64,7 @@ pub struct ParameterChangeProposal {
 }
 
 impl ExecutableProposal for ParameterChangeProposal {
-    fn execute(&self, blockchain: &mut Blockchain) -> Result<(), String> {
+    fn execute(&self, _blockchain: &mut Blockchain) -> Result<(), String> {
         // Implementation for changing a blockchain parameter
         // This is a placeholder and should be implemented based on your specific blockchain structure
         println!("Changing parameter {} to {}", self.parameter_name, self.new_value);
@@ -86,9 +86,7 @@ impl DemocraticSystem {
         DemocraticSystem {
             proposals: HashMap::new(),
             votes: HashMap::new(),
-            // NEW CODE BLOCK 5: START
             executable_proposals: HashMap::new(),
-            // NEW CODE BLOCK 5: END
         }
     }
 

@@ -1,6 +1,6 @@
 use crate::consensus::{PoCConsensus, CurrencyType};
 use crate::transaction_validator::TransactionValidator;
-use crate::democracy::{DemocraticSystem, ProposalCategory, ProposalType, Proposal};
+use crate::democracy::{DemocraticSystem, ProposalCategory, ProposalType};
 use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
@@ -89,7 +89,7 @@ impl Blockchain {
             chain: Vec::new(),
             pending_blocks: Vec::new(),
             consensus: PoCConsensus::new(0.5, 0.66),
-            democratic_system: DemocraticSystem::new(), // Adding the missing field initialization
+            democratic_system: DemocraticSystem::new(),
         };
         
         // Create genesis block
@@ -103,8 +103,6 @@ impl Blockchain {
         
         blockchain
     }
-
-    // Existing methods (create_block, vote_on_block, finalize_block, maintain_blockchain, check_for_slashing) remain unchanged
 
     pub fn create_proposal(&mut self, title: String, description: String, proposer: String,
                            voting_duration: Duration, proposal_type: ProposalType,
@@ -138,22 +136,40 @@ impl Blockchain {
     }
 
     pub fn execute_pending_proposals(&mut self) -> Vec<Result<(), String>> {
-        let mut results = Vec::new();
+        let current_time = Utc::now();
+        let active_proposals: Vec<_> = self.democratic_system.list_active_proposals()
+            .iter()
+            .filter(|proposal| current_time >= proposal.voting_ends_at)
+            .map(|proposal| proposal.id.clone())
+            .collect();
 
-        for proposal in self.democratic_system.list_active_proposals() {
-            if Utc::now() >= proposal.voting_ends_at {
-                match self.democratic_system.tally_votes(&proposal.id) {
-                    Ok(_) => {
-                        if let Some(execution_time) = proposal.execution_timestamp {
-                            if Utc::now() >= execution_time {
-                                results.push(self.democratic_system.execute_proposal(&proposal.id, self));
-                            }
+        let mut results = Vec::new();
+        let mut to_execute = Vec::new();
+
+        // First, tally votes
+        for id in active_proposals {
+            match self.democratic_system.tally_votes(&id) {
+                Ok(_) => {
+                    if let Some(execution_time) = self.democratic_system.get_proposal(&id).unwrap().execution_timestamp {
+                        if current_time >= execution_time {
+                            to_execute.push(id);
                         }
-                    },
-                    Err(e) => results.push(Err(e)),
-                }
+                    }
+                },
+                Err(e) => results.push(Err(e)),
             }
         }
+
+        // Separate mutable borrow scope
+        let mut democratic_system = std::mem::replace(&mut self.democratic_system, DemocraticSystem::new());
+
+        // Then, execute proposals
+        for id in to_execute {
+            let result = democratic_system.execute_proposal(&id, self);
+            results.push(result);
+        }
+
+        self.democratic_system = democratic_system;
 
         results
     }
