@@ -1,10 +1,9 @@
 use crate::consensus::{PoCConsensus, CurrencyType};
 use crate::transaction_validator::TransactionValidator;
-use crate::democracy::{DemocraticSystem, Proposal, ProposalCategory, ProposalType};
+use crate::democracy::{DemocraticSystem, ProposalCategory, ProposalType, Proposal};
 use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
@@ -90,7 +89,7 @@ impl Blockchain {
             chain: Vec::new(),
             pending_blocks: Vec::new(),
             consensus: PoCConsensus::new(0.5, 0.66),
-            democratic_system: DemocraticSystem::new(),
+            democratic_system: DemocraticSystem::new(), // Adding the missing field initialization
         };
         
         // Create genesis block
@@ -133,8 +132,8 @@ impl Blockchain {
         self.democratic_system.vote(voter.to_string(), proposal_id.to_string(), in_favor, voter_weight)?;
 
         // Update reputation for participation in governance
-        self.consensus.update_reputation_for_governance(voter, 0.1);
-
+        self.consensus.update_reputation(voter, 0.1);
+        
         Ok(())
     }
 
@@ -157,27 +156,6 @@ impl Blockchain {
         }
 
         results
-    }
-}
-
-impl Blockchain {
-    pub fn new() -> Self {
-        let mut blockchain = Blockchain {
-            chain: Vec::new(),
-            pending_blocks: Vec::new(),
-            consensus: PoCConsensus::new(0.5, 0.66),
-        };
-        
-        // Create genesis block
-        let genesis_block = Block::new(
-            0,
-            Vec::new(),
-            String::from("0"),
-            String::from("Genesis"),
-        );
-        blockchain.chain.push(genesis_block);
-        
-        blockchain
     }
 
     pub fn create_block(&mut self, transactions: Vec<Transaction>) -> Result<(), String> {

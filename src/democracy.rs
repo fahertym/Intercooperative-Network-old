@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};
+use crate::blockchain::Blockchain;
 
 // NEW CODE BLOCK 1: START
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
