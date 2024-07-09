@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
 use std::fmt;
+use crate::smart_contract::{SmartContract, ExecutionEnvironment};
 
 impl fmt::Display for CurrencyType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -58,6 +59,7 @@ pub struct Block {
     pub hash: String,
     pub proposer: String,
     pub nonce: u64,
+    pub smart_contracts: Vec<SmartContract>,
 }
 
 impl Block {
@@ -73,6 +75,10 @@ impl Block {
         };
         block.hash = block.calculate_hash();
         block
+    }
+
+    pub fn add_smart_contract(&mut self, contract: SmartContract) {
+        self.smart_contracts.push(contract);
     }
 
     pub fn calculate_hash(&self) -> String {
@@ -94,6 +100,7 @@ pub struct Blockchain {
     pub pending_blocks: Vec<Block>,
     pub consensus: PoCConsensus,
     pub democratic_system: DemocraticSystem,
+    pub execution_environment: ExecutionEnvironment,
 }
 
 impl Blockchain {
@@ -116,6 +123,33 @@ impl Blockchain {
 
         blockchain
     }
+
+    pub fn deploy_smart_contract(&mut self, contract: SmartContract) -> Result<(), String> {
+        let mut current_block = self.get_latest_block()?;
+        current_block.add_smart_contract(contract);
+        Ok(())
+    }
+
+    pub fn deploy_smart_contract(&mut self, contract: SmartContract) -> Result<(), String> {
+        let mut current_block = self.get_latest_block()?;
+        current_block.add_smart_contract(contract);
+        Ok(())
+    }
+
+    pub fn execute_smart_contracts(&mut self) -> Result<(), String> {
+        let current_block = self.get_latest_block()?;
+        for contract in &current_block.smart_contracts {
+            let mut contract_clone = contract.clone();
+            contract_clone.execute(&mut self.execution_environment)?;
+        }
+        Ok(())
+    }
+
+    fn get_latest_block(&self) -> Result<&mut Block, String> {
+        self.chain.last_mut().ok_or("Blockchain is empty".to_string())
+    }
+
+
 
     pub fn create_proposal(&mut self, title: String, description: String, proposer: String,
                            voting_duration: Duration, proposal_type: ProposalType,
