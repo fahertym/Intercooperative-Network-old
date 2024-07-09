@@ -1,8 +1,9 @@
 // src/currency.rs
 
-use serde::{Serialize, Deserialize};
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub enum CurrencyType {
@@ -98,10 +99,12 @@ impl CurrencySystem {
     }
 
     pub fn adaptive_issuance(&mut self) {
+        let now = Utc::now();
         for currency in self.currencies.values_mut() {
-            let time_since_last_issuance = Utc::now() - currency.last_issuance;
-            let issuance_amount = currency.total_supply * currency.issuance_rate * time_since_last_issuance.num_days() as f64;
+            let time_since_last_issuance = now.signed_duration_since(currency.last_issuance);
+            let issuance_amount = currency.total_supply * currency.issuance_rate * time_since_last_issuance.num_milliseconds() as f64 / 86_400_000.0; // Daily rate
             currency.mint(issuance_amount);
+            currency.last_issuance = now;
         }
     }
 
@@ -112,6 +115,7 @@ impl CurrencySystem {
         }
     }
 }
+
 
 pub struct Wallet {
     balances: HashMap<CurrencyType, f64>,
@@ -152,6 +156,8 @@ impl Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::thread::sleep;
+    use std::time::Duration;
 
     #[test]
     fn test_currency_system() {
@@ -164,9 +170,14 @@ mod tests {
         let test_coin = system.get_currency(&CurrencyType::Custom("TestCoin".to_string())).unwrap();
         assert_eq!(test_coin.total_supply, 1000.0);
 
+        // Sleep for a short duration to allow for issuance
+        sleep(Duration::from_millis(10));
+
         system.adaptive_issuance();
-        // Note: The actual values after issuance will depend on the time elapsed
-        assert!(system.get_currency(&CurrencyType::BasicNeeds).unwrap().total_supply > 1_000_000.0);
+        
+        // Check if the supply has increased, even if by a small amount
+        let basic_needs_supply = system.get_currency(&CurrencyType::BasicNeeds).unwrap().total_supply;
+        assert!(basic_needs_supply > 1_000_000.0, "Supply did not increase as expected. Current supply: {}", basic_needs_supply);
     }
 
     #[test]

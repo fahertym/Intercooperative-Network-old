@@ -1,3 +1,5 @@
+// src/pending_interest_table.rs
+
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -78,5 +80,11 @@ mod tests {
         
         pit.remove_interest("test");
         assert!(!pit.has_pending_interest("test"));
+
+        // Test clear_expired
+        pit.add_interest("test_expired".to_string(), "interface1");
+        std::thread::sleep(Duration::from_secs(5));
+        pit.clear_expired();
+        assert!(!pit.has_pending_interest("test_expired"));
     }
 }

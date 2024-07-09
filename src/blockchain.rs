@@ -1,9 +1,18 @@
-use crate::consensus::{PoCConsensus, CurrencyType};
-use crate::transaction_validator::TransactionValidator;
+// src/blockchain.rs
+
+use crate::consensus::PoCConsensus;
+use crate::currency::CurrencyType;
 use crate::democracy::{DemocraticSystem, ProposalCategory, ProposalType};
 use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};
 use sha2::{Sha256, Digest};
+use std::fmt;
+
+impl fmt::Display for CurrencyType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
@@ -23,6 +32,10 @@ impl Transaction {
             currency_type,
             timestamp: Utc::now(),
         }
+    }
+
+    pub fn is_valid_amount(&self) -> bool {
+        self.amount >= 0.0
     }
 
     fn to_bytes(&self) -> Vec<u8> {
@@ -91,7 +104,7 @@ impl Blockchain {
             consensus: PoCConsensus::new(0.5, 0.66),
             democratic_system: DemocraticSystem::new(),
         };
-        
+
         // Create genesis block
         let genesis_block = Block::new(
             0,
@@ -100,7 +113,7 @@ impl Blockchain {
             String::from("Genesis"),
         );
         blockchain.chain.push(genesis_block);
-        
+
         blockchain
     }
 
@@ -111,7 +124,7 @@ impl Blockchain {
             return Err("Proposer is not eligible to create a proposal".to_string());
         }
 
-        let execution_timestamp = Utc::now() + voting_duration + Duration::days(1); // Example: execute 1 day after voting ends
+        let execution_timestamp = Utc::now() + voting_duration + Duration::days(1);
         let proposal_id = self.democratic_system.create_proposal(
             title, description, proposer, voting_duration, proposal_type,
             category, required_quorum, Some(execution_timestamp)
@@ -131,7 +144,7 @@ impl Blockchain {
 
         // Update reputation for participation in governance
         self.consensus.update_reputation(voter, 0.1);
-        
+
         Ok(())
     }
 
@@ -142,10 +155,10 @@ impl Blockchain {
             .filter(|proposal| current_time >= proposal.voting_ends_at)
             .map(|proposal| proposal.id.clone())
             .collect();
-
+    
         let mut results = Vec::new();
         let mut to_execute = Vec::new();
-
+    
         // First, tally votes
         for id in active_proposals {
             match self.democratic_system.tally_votes(&id) {
@@ -159,35 +172,34 @@ impl Blockchain {
                 Err(e) => results.push(Err(e)),
             }
         }
-
+    
         // Separate mutable borrow scope
         let mut democratic_system = std::mem::replace(&mut self.democratic_system, DemocraticSystem::new());
-
+    
         // Then, execute proposals
         for id in to_execute {
             let result = democratic_system.execute_proposal(&id, self);
             results.push(result);
         }
-
+    
         self.democratic_system = democratic_system;
-
+    
         results
     }
 
     pub fn create_block(&mut self, transactions: Vec<Transaction>) -> Result<(), String> {
-        let proposer = self.consensus.select_proposer().ok_or("No eligible proposer")?;
-        let previous_block = self.chain.last().ok_or("Chain is empty")?;
-        
-        // Validate transactions
         let valid_transactions: Vec<Transaction> = transactions
             .into_iter()
-            .filter(|tx| TransactionValidator::validate_transaction(tx, self))
+            .filter(|tx| tx.is_valid_amount())
             .collect();
-
+    
         if valid_transactions.is_empty() {
             return Err("No valid transactions to include in the block".to_string());
         }
-
+    
+        let previous_block = self.chain.last().unwrap();
+        let proposer = self.consensus.select_proposer().ok_or("No eligible proposer found")?;
+    
         let new_block = Block::new(
             previous_block.index + 1,
             valid_transactions,
@@ -215,10 +227,14 @@ impl Blockchain {
             return;
         }
         if self.consensus.is_block_valid(block_index as u64) {
-            if let Some(block) = self.pending_blocks.pop() {
-                self.chain.push(block);
+            if let Some(block) = self.pending_blocks.get(0) {
+                self.chain.push(block.clone());
+                self.pending_blocks.remove(0);
                 self.consensus.finalize_block(block_index as u64);
+                println!("Block {} finalized and added to the chain", block_index);
             }
+        } else {
+            println!("Block {} is not valid and cannot be finalized", block_index);
         }
     }
 

@@ -1,3 +1,5 @@
+// src/fib.rs
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
@@ -53,17 +55,11 @@ impl ForwardingInformationBase {
     }
 
     pub fn longest_prefix_match(&self, name: &str) -> Option<&FibEntry> {
-        let mut longest_match: Option<&FibEntry> = None;
-        let mut longest_prefix_len = 0;
-
-        for (prefix, entry) in &self.entries {
-            if name.starts_with(prefix) && prefix.len() > longest_prefix_len {
-                longest_match = Some(entry);
-                longest_prefix_len = prefix.len();
-            }
-        }
-
-        longest_match
+        self.entries
+            .iter()
+            .filter(|(prefix, _)| name.starts_with(*prefix))
+            .max_by_key(|(prefix, _)| prefix.len())
+            .map(|(_, entry)| entry)
     }
 }
 
@@ -86,5 +82,17 @@ mod tests {
         let longest_match = fib.longest_prefix_match("/test/nested/deep");
         assert!(longest_match.is_some());
         assert_eq!(longest_match.unwrap().name, "/test/nested");
+
+        // Test remove_entry
+        fib.remove_entry("/test");
+        assert!(fib.get_next_hops("/test").is_none());
+
+        // Test FibEntry methods
+        let mut entry = FibEntry::new("/example".to_string(), addr1);
+        entry.add_next_hop(addr2);
+        assert_eq!(entry.next_hops.len(), 2);
+        entry.remove_next_hop(&addr1);
+        assert_eq!(entry.next_hops.len(), 1);
+        assert_eq!(entry.next_hops[0], addr2);
     }
 }

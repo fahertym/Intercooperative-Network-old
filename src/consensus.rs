@@ -1,23 +1,8 @@
+// src/consensus.rs
+
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rand::Rng;
-use serde::{Serialize, Deserialize};
-use std::fmt;
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum CurrencyType {
-    BasicNeeds,
-    Education,
-    Environmental,
-    Community,
-    Volunteer,
-}
-
-impl fmt::Display for CurrencyType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
 
 type ReputationScores = HashMap<String, f64>;
 
@@ -47,13 +32,13 @@ impl PoCConsensus {
         Self {
             reputation_scores: HashMap::new(),
             min_reputation_threshold,
-            max_reputation: 100.0, // Assuming a default max reputation value
+            max_reputation: 100.0,
             votes: HashMap::new(),
             vote_threshold,
             last_decay: 0,
-            decay_period: 86400, // Assuming a default decay period (1 day in seconds)
-            decay_factor: 0.95, // Assuming a default decay factor
-            rehabilitation_rate: 0.1, // Assuming a default rehabilitation rate
+            decay_period: 86400,
+            decay_factor: 0.95,
+            rehabilitation_rate: 0.1,
             slashing_severity: HashMap::new(),
         }
     }
@@ -61,10 +46,13 @@ impl PoCConsensus {
     pub fn set_vote_threshold(&mut self, new_threshold: f64) {
         self.vote_threshold = new_threshold.max(0.0).min(1.0);
     }
-        
 
     pub fn add_member(&mut self, member_id: String) {
-        self.reputation_scores.insert(member_id, 1.0);
+        self.reputation_scores.insert(member_id, self.min_reputation_threshold - 0.1);
+    }
+
+    pub fn is_eligible(&self, member_id: &str) -> bool {
+        self.get_reputation(member_id).unwrap_or(0.0) >= self.min_reputation_threshold
     }
 
     pub fn update_reputation(&mut self, member_id: &str, delta: f64) {
@@ -75,10 +63,6 @@ impl PoCConsensus {
 
     pub fn get_reputation(&self, member_id: &str) -> Option<f64> {
         self.reputation_scores.get(member_id).cloned()
-    }
-
-    pub fn is_eligible(&self, member_id: &str) -> bool {
-        self.get_reputation(member_id).unwrap_or(0.0) >= self.min_reputation_threshold
     }
 
     pub fn select_proposer(&self) -> Option<String> {
@@ -93,12 +77,12 @@ impl PoCConsensus {
 
         let total_reputation: f64 = eligible_members.iter().map(|(_, &score)| score).sum();
         let mut rng = rand::thread_rng();
-        let selection_point = rng.gen_range(0.0, total_reputation);
+        let selection_point: f64 = rng.gen_range(0.0, total_reputation);
 
         let mut cumulative_reputation = 0.0;
-        for (member, &score) in eligible_members {
+        for (member, &score) in eligible_members.into_iter().rev() {
             cumulative_reputation += score;
-            if cumulative_reputation >= selection_point {
+            if selection_point <= cumulative_reputation {
                 return Some(member.clone());
             }
         }
@@ -178,5 +162,50 @@ impl PoCConsensus {
             println!("Slashing challenge failed for {}. Reputation remains at {}", member_id, current_reputation);
             false
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_poc_consensus() {
+        let mut consensus = PoCConsensus::new(0.5, 0.66);
+        
+        consensus.add_member("Alice".to_string());
+        consensus.add_member("Bob".to_string());
+        consensus.add_member("Charlie".to_string());
+
+        assert_eq!(consensus.get_reputation("Alice"), Some(0.4));
+        assert_eq!(consensus.get_reputation("Bob"), Some(0.4));
+        assert_eq!(consensus.get_reputation("Charlie"), Some(0.4));
+
+        consensus.update_reputation("Alice", 0.2);
+        consensus.update_reputation("Bob", 0.1);
+
+        assert!(consensus.is_eligible("Alice"));
+        assert!(consensus.is_eligible("Bob"));
+        assert!(!consensus.is_eligible("Charlie"));
+
+        consensus.submit_vote(1, "Alice".to_string(), true);
+        consensus.submit_vote(1, "Bob".to_string(), true);
+        consensus.submit_vote(1, "Charlie".to_string(), false);
+
+        assert!(consensus.is_block_valid(1));
+
+        consensus.finalize_block(1);
+
+        assert!(consensus.get_reputation("Alice").unwrap() > 0.6);
+        assert!(consensus.get_reputation("Bob").unwrap() > 0.5);
+        assert!(consensus.get_reputation("Charlie").unwrap() < 0.5);
+
+        consensus.slash_reputation("Alice", "minor_offense");
+        assert!(consensus.get_reputation("Alice").unwrap() < 0.6);
+
+        consensus.decay_reputations();
+        consensus.rehabilitate_members();
+
+        assert!(consensus.challenge_slashing("Alice", 2));
     }
 }

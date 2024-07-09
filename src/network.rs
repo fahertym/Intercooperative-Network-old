@@ -1,3 +1,5 @@
+// src/network.rs
+
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
@@ -55,7 +57,7 @@ impl Network {
         // In a real implementation, this would send the block to all nodes in the network
     }
 
-    pub fn synchronize_blockchain(&self, blockchain: &[Block]) {
+    pub fn synchronize_blockchain(&self, _blockchain: &[Block]) {
         println!("Synchronizing blockchain across all nodes");
         // In a real implementation, this would ensure all nodes have the same blockchain state
     }

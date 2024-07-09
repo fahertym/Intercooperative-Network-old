@@ -1,3 +1,5 @@
+// src/content_store.rs
+
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -28,16 +30,8 @@ impl ContentStore {
             ttl: DEFAULT_TTL,
         });
 
-        // Evict oldest entries if cache size exceeds MAX_CACHE_SIZE
         if self.cache.len() > MAX_CACHE_SIZE {
-            let oldest_key = self.cache
-                .iter()
-                .min_by_key(|(_, entry)| entry.timestamp)
-                .map(|(k, _)| k.clone());
-
-            if let Some(key) = oldest_key {
-                self.cache.remove(&key);
-            }
+            self.evict_oldest();
         }
     }
 
@@ -63,6 +57,14 @@ impl ContentStore {
     pub fn clear_expired(&mut self) {
         self.cache.retain(|_, entry| entry.timestamp.elapsed() < entry.ttl);
     }
+
+    fn evict_oldest(&mut self) {
+        if let Some(oldest) = self.cache.iter()
+            .min_by_key(|(_, entry)| entry.timestamp)
+            .map(|(k, _)| k.clone()) {
+            self.cache.remove(&oldest);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -82,5 +84,11 @@ mod tests {
         cs.set_ttl("test", Duration::from_secs(1));
         std::thread::sleep(Duration::from_secs(2));
         assert_eq!(cs.get("test"), None);
+
+        // Test clear_expired
+        cs.add("test2".to_string(), vec![5, 6, 7, 8]);
+        cs.set_ttl("test2", Duration::from_secs(10));
+        cs.clear_expired();
+        assert_eq!(cs.get("test2"), Some(vec![5, 6, 7, 8]));
     }
 }
