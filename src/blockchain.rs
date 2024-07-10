@@ -1,5 +1,3 @@
-// src/blockchain.rs
-
 use crate::consensus::PoCConsensus;
 use crate::currency::CurrencyType;
 use crate::democracy::{DemocraticSystem, ProposalCategory, ProposalType};
@@ -72,6 +70,7 @@ impl Block {
             hash: String::new(),
             proposer,
             nonce: 0,
+            smart_contracts: vec![],
         };
         block.hash = block.calculate_hash();
         block
@@ -110,6 +109,7 @@ impl Blockchain {
             pending_blocks: Vec::new(),
             consensus: PoCConsensus::new(0.5, 0.66),
             democratic_system: DemocraticSystem::new(),
+            execution_environment: ExecutionEnvironment::new(),
         };
 
         // Create genesis block
@@ -125,31 +125,28 @@ impl Blockchain {
     }
 
     pub fn deploy_smart_contract(&mut self, contract: SmartContract) -> Result<(), String> {
-        let mut current_block = self.get_latest_block()?;
-        current_block.add_smart_contract(contract);
-        Ok(())
-    }
-
-    pub fn deploy_smart_contract(&mut self, contract: SmartContract) -> Result<(), String> {
-        let mut current_block = self.get_latest_block()?;
+        let current_block = self.get_latest_block()?;
         current_block.add_smart_contract(contract);
         Ok(())
     }
 
     pub fn execute_smart_contracts(&mut self) -> Result<(), String> {
-        let current_block = self.get_latest_block()?;
-        for contract in &current_block.smart_contracts {
-            let mut contract_clone = contract.clone();
-            contract_clone.execute(&mut self.execution_environment)?;
+        let mut execution_environment = std::mem::take(&mut self.execution_environment);
+    
+        if let Some(current_block) = self.chain.last_mut() {
+            for contract in &current_block.smart_contracts {
+                let mut contract_clone = contract.clone();
+                contract_clone.execute(&mut execution_environment)?;
+            }
         }
+    
+        self.execution_environment = execution_environment;
         Ok(())
     }
-
-    fn get_latest_block(&self) -> Result<&mut Block, String> {
-        self.chain.last_mut().ok_or("Blockchain is empty".to_string())
+    
+    fn get_latest_block(&mut self) -> Result<&mut Block, String> {
+        self.chain.last_mut().ok_or_else(|| "Blockchain is empty".to_string())
     }
-
-
 
     pub fn create_proposal(&mut self, title: String, description: String, proposer: String,
                            voting_duration: Duration, proposal_type: ProposalType,

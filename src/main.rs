@@ -18,7 +18,6 @@ use crate::network::Network;
 use crate::transaction_validator::TransactionValidator;
 use crate::cli::run_cli;
 
-use chrono::Utc;
 use std::collections::HashMap;
 
 fn main() {
@@ -32,26 +31,31 @@ fn main() {
     let network = Network::new();
     let transaction_validator = TransactionValidator;
 
-    let mut blockchain = Blockchain::new(
-        consensus,
-        currency_system,
-        democratic_system,
-        did_manager,
-        network,
-        transaction_validator,
-    );
+    let mut blockchain = Blockchain::new();
 
     // Add initial members
-    blockchain.add_member("Alice".to_string());
-    blockchain.add_member("Bob".to_string());
-    blockchain.add_member("Charlie".to_string());
-    blockchain.add_member("Dave".to_string());
+    blockchain.consensus.add_member("Alice".to_string());
+    blockchain.consensus.add_member("Bob".to_string());
+    blockchain.consensus.add_member("Charlie".to_string());
+    blockchain.consensus.add_member("Dave".to_string());
 
     // Initialize member balances
-    blockchain.init_balance("Alice".to_string(), "ICN_TOKEN".to_string(), 1000.0);
-    blockchain.init_balance("Bob".to_string(), "ICN_TOKEN".to_string(), 1000.0);
-    blockchain.init_balance("Charlie".to_string(), "ICN_TOKEN".to_string(), 1000.0);
-    blockchain.init_balance("Dave".to_string(), "ICN_TOKEN".to_string(), 1000.0);
+    blockchain.execution_environment.balances.insert(
+        "Alice".to_string(),
+        [("ICN_TOKEN".to_string(), 1000.0)].iter().cloned().collect(),
+    );
+    blockchain.execution_environment.balances.insert(
+        "Bob".to_string(),
+        [("ICN_TOKEN".to_string(), 1000.0)].iter().cloned().collect(),
+    );
+    blockchain.execution_environment.balances.insert(
+        "Charlie".to_string(),
+        [("ICN_TOKEN".to_string(), 1000.0)].iter().cloned().collect(),
+    );
+    blockchain.execution_environment.balances.insert(
+        "Dave".to_string(),
+        [("ICN_TOKEN".to_string(), 1000.0)].iter().cloned().collect(),
+    );
 
     // Example: Deploy an asset transfer smart contract
     let contract_input = "Asset Transfer
@@ -106,7 +110,9 @@ Quorum: 0.5";
     println!("Latest block smart contracts: {}", blockchain.chain.last().unwrap().smart_contracts.len());
     println!("Member balances:");
     for member in ["Alice", "Bob", "Charlie", "Dave"].iter() {
-        let balance = blockchain.get_balance(member, "ICN_TOKEN");
+        let balance = blockchain.execution_environment.balances.get(*member)
+            .and_then(|b| b.get("ICN_TOKEN"))
+            .unwrap_or(&0.0);
         println!("{}: {} ICN_TOKEN", member, balance);
     }
 

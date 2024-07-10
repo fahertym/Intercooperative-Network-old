@@ -1,5 +1,3 @@
-// src/lib.rs
-
 pub mod blockchain;
 pub mod consensus;
 pub mod content_store;
@@ -11,6 +9,7 @@ pub mod network;
 pub mod packet;
 pub mod pending_interest_table;
 pub mod transaction_validator;
+pub mod smart_contract;
 
 // Re-export key structures and traits for easier use
 pub use blockchain::{Block, Transaction, Blockchain};
