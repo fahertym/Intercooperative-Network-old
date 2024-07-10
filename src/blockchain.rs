@@ -9,7 +9,6 @@ use std::collections::HashMap;
 
 const MAX_GAS_PER_BLOCK: u64 = 1_000_000;
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transaction {
     pub from: String,
@@ -35,7 +34,6 @@ impl Transaction {
             gas_limit,
         }
     }
-
 
     pub fn with_smart_contract(mut self, smart_contract: SmartContract) -> Self {
         self.smart_contract = Some(smart_contract);
@@ -87,9 +85,6 @@ pub struct Block {
     pub gas_used: u64,
 }
 
-
-
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SmartContractResult {
     pub contract_id: String,
@@ -109,7 +104,6 @@ impl Block {
             nonce: 0,
             smart_contract_results: Vec::new(),
             gas_used: 0,
-            smart_contracts: Vec::new(),
         };
         block.hash = block.calculate_hash();
         block
@@ -143,6 +137,14 @@ impl Block {
         self.gas_used += gas_used;
         self.hash = self.calculate_hash();
     }
+}
+
+pub struct Blockchain {
+    pub chain: Vec<Block>,
+    pub pending_transactions: Vec<Transaction>,
+    pub consensus: PoCConsensus,
+    pub smart_contracts: HashMap<String, SmartContract>,
+    pub execution_environment: ExecutionEnvironment,
 }
 
 impl Blockchain {
@@ -338,7 +340,6 @@ impl Blockchain {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

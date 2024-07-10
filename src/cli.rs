@@ -1,5 +1,3 @@
-// File: src/cli.rs
-
 use crate::blockchain::Blockchain;
 use crate::smart_contract::parse_contract;
 use std::io::{self, Write};
@@ -51,7 +49,8 @@ fn deploy_contract(blockchain: &mut Blockchain) {
     }
 
     match parse_contract(&contract_input) {
-        Ok(contract) => {
+        Ok(mut contract) => {
+            contract.activate(); // Activate the contract before deployment
             match blockchain.deploy_smart_contract(contract) {
                 Ok(_) => println!("Smart contract deployed successfully!"),
                 Err(e) => println!("Failed to deploy smart contract: {}", e),
@@ -73,6 +72,6 @@ fn execute_contracts(blockchain: &mut Blockchain) {
 fn view_blockchain_state(blockchain: &Blockchain) {
     println!("Blockchain state:");
     println!("Number of blocks: {}", blockchain.chain.len());
-    println!("Latest block smart contracts: {}", blockchain.chain.last().unwrap().smart_contracts.len());
+    println!("Latest block smart contract results: {}", blockchain.chain.last().unwrap().smart_contract_results.len());
     // Add more state information as needed
 }

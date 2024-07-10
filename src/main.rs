@@ -19,14 +19,22 @@ use crate::transaction_validator::TransactionValidator;
 use crate::cli::run_cli;
 
 fn main() {
-    println!("Intercooperative Network (ICN) Project");
-
-    // Initialize blockchain and related systems
+    #[allow(unused_variables)]
     let consensus = PoCConsensus::new(0.5, 0.66);
+
+    #[allow(unused_variables)]
     let currency_system = CurrencySystem::new();
+
+    #[allow(unused_variables)]
     let democratic_system = DemocraticSystem::new();
+
+    #[allow(unused_variables)]
     let did_manager = DidManager::new();
+
+    #[allow(unused_variables)]
     let network = Network::new();
+
+    #[allow(unused_variables)]
     let transaction_validator = TransactionValidator;
 
     let mut blockchain = Blockchain::new();
@@ -56,15 +64,18 @@ fn main() {
     );
 
     // Example: Deploy an asset transfer smart contract
-    let contract_input = "Asset Transfer
+    let contract_input = r#"Asset Transfer
 Creator: Alice
-From: Alice
-To: Bob
-Asset: ICN_TOKEN
-Amount: 100.0";
+{
+    "from": "Alice",
+    "to": "Bob",
+    "asset": "ICN_TOKEN",
+    "amount": 100.0
+}"#;
 
     match parse_contract(contract_input) {
-        Ok(contract) => {
+        Ok(mut contract) => {
+            contract.activate(); // Activate the contract before deployment
             if let Err(e) = blockchain.deploy_smart_contract(contract) {
                 println!("Failed to deploy asset transfer contract: {}", e);
             } else {
@@ -75,17 +86,18 @@ Amount: 100.0";
     }
 
     // Example: Deploy a proposal smart contract
-    let proposal_input = "Proposal
+    let proposal_input = r#"Proposal
 Creator: Charlie
 Title: New Community Project
 Description: Implement a recycling program
 Voting Period: 604800
 Option 1: Approve
 Option 2: Reject
-Quorum: 0.5";
+Quorum: 0.5"#;
 
     match parse_contract(proposal_input) {
-        Ok(contract) => {
+        Ok(mut contract) => {
+            contract.activate(); // Activate the contract before deployment
             if let Err(e) = blockchain.deploy_smart_contract(contract) {
                 println!("Failed to deploy proposal contract: {}", e);
             } else {
@@ -105,7 +117,7 @@ Quorum: 0.5";
     // Print initial blockchain state
     println!("\nInitial Blockchain State:");
     println!("Number of blocks: {}", blockchain.chain.len());
-    println!("Latest block smart contracts: {}", blockchain.chain.last().unwrap().smart_contracts.len());
+    println!("Latest block smart contract results: {}", blockchain.chain.last().unwrap().smart_contract_results.len());
     println!("Member balances:");
     for member in ["Alice", "Bob", "Charlie", "Dave"].iter() {
         let balance = blockchain.execution_environment.balances.get(*member)

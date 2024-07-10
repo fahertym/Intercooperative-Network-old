@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use std::time::Duration;
 
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ContractType {
     AssetTransfer,
@@ -101,18 +100,18 @@ impl SmartContract {
         }
     }
 
-
     fn execute_proposal(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: ProposalParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse proposal params: {}", e))?;
-
-        // Convert time::Duration to chrono::Duration if needed
-        let _voting_period = chrono::Duration::from_std(params.voting_period.try_into().map_err(|e| format!("Invalid duration: {}", e))?).map_err(|e| format!("Failed to convert duration: {}", e))?;
+    
+        let voting_period = chrono::Duration::from_std(params.voting_period)
+            .map_err(|e| format!("Failed to convert voting period: {}", e))?;
+    
         env.proposals.insert(self.id.clone(), params);
         // Use voting_period here if needed
+    
         Ok(())
     }
-
 
     fn execute_service_agreement(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: ServiceAgreementParams = serde_json::from_str(&self.content)
@@ -269,7 +268,6 @@ pub struct CooperativeMembershipParams {
     subscription_period: Duration,
 }
 
-
 pub fn parse_contract(input: &str) -> Result<SmartContract, String> {
     let lines: Vec<&str> = input.lines().collect();
     if lines.len() < 2 {
@@ -287,10 +285,10 @@ pub fn parse_contract(input: &str) -> Result<SmartContract, String> {
         custom => ContractType::Custom(custom.to_string()),
     };
 
-    let creator = lines[1].split(": ").nth(1).ok_or("Invalid creator format")?;
+    let creator = lines[1].split(": ").nth(1).ok_or("Invalid creator format")?.to_string();
     let content = lines[2..].join("\n");
 
-    Ok(SmartContract::new(contract_type, creator.to_string(), content))
+    Ok(SmartContract::new(contract_type, creator, content))
 }
 
 #[cfg(test)]
@@ -318,13 +316,14 @@ Creator: Alice
         let mut env = ExecutionEnvironment::new();
         env.add_balance("Alice", "ICN_TOKEN", 1000.0);
 
-        let contract = SmartContract::new(
+        let mut contract = SmartContract::new(
             ContractType::AssetTransfer,
             "Alice".to_string(),
             r#"{"from": "Alice", "to": "Bob", "asset": "ICN_TOKEN", "amount": 100.0}"#.to_string(),
         );
-
+        
         contract.activate();
+        
         assert!(contract.execute(&mut env).is_ok());
         assert_eq!(env.get_balance("Alice", "ICN_TOKEN"), 900.0);
         assert_eq!(env.get_balance("Bob", "ICN_TOKEN"), 100.0);
@@ -333,7 +332,7 @@ Creator: Alice
     #[test]
     fn test_execute_proposal() {
         let mut env = ExecutionEnvironment::new();
-        let contract = SmartContract::new(
+        let mut contract = SmartContract::new(
             ContractType::Proposal,
             "Charlie".to_string(),
             r#"{"title": "New Project", "description": "Start a community garden", "options": ["Approve", "Reject"], "voting_period": 604800, "quorum": 0.5}"#.to_string(),
@@ -349,7 +348,7 @@ Creator: Alice
     fn test_execute_governance_vote() {
         let mut env = ExecutionEnvironment::new();
         let proposal_id = "proposal_1".to_string();
-        let contract = SmartContract::new(
+        let mut contract = SmartContract::new(
             ContractType::GovernanceVote,
             "Dave".to_string(),
             format!(r#"{{"proposal_id": "{}", "voter": "Dave", "vote": true}}"#, proposal_id),
@@ -364,7 +363,7 @@ Creator: Alice
     #[test]
     fn test_execute_service_agreement() {
         let mut env = ExecutionEnvironment::new();
-        let contract = SmartContract::new(
+        let mut contract = SmartContract::new(
             ContractType::ServiceAgreement,
             "Eve".to_string(),
             r#"{"provider": "Eve", "consumer": "Frank", "service": "Web Development", "terms": "Develop a website for 1000 ICN_TOKEN", "start_date": "2023-07-01T00:00:00Z", "end_date": "2023-08-01T00:00:00Z"}"#.to_string(),
@@ -379,7 +378,7 @@ Creator: Alice
     #[test]
     fn test_execute_resource_allocation() {
         let mut env = ExecutionEnvironment::new();
-        let contract = SmartContract::new(
+        let mut contract = SmartContract::new(
             ContractType::ResourceAllocation,
             "Grace".to_string(),
             r#"{"resource": "Computing Power", "amount": 100.0, "recipient": "Research Team", "duration": 2592000}"#.to_string(),
@@ -394,7 +393,7 @@ Creator: Alice
     #[test]
     fn test_execute_identity_verification() {
         let mut env = ExecutionEnvironment::new();
-        let contract = SmartContract::new(
+        let mut contract = SmartContract::new(
             ContractType::IdentityVerification,
             "Henry".to_string(),
             r#"{"user_id": "Henry", "verification_data": "Passport: AB123456", "verification_method": "Government ID", "expiration": "2025-07-01T00:00:00Z"}"#.to_string(),
@@ -409,7 +408,7 @@ Creator: Alice
     #[test]
     fn test_execute_cooperative_membership() {
         let mut env = ExecutionEnvironment::new();
-        let contract = SmartContract::new(
+        let mut contract = SmartContract::new(
             ContractType::CooperativeMembership,
             "Ivy".to_string(),
             r#"{"user_id": "Ivy", "membership_type": "Full Member", "join_date": "2023-07-01T00:00:00Z", "subscription_period": 31536000}"#.to_string(),
@@ -424,7 +423,7 @@ Creator: Alice
     #[test]
     fn test_execute_custom_contract() {
         let mut env = ExecutionEnvironment::new();
-        let contract = SmartContract::new(
+        let mut contract = SmartContract::new(
             ContractType::Custom("DataSharing".to_string()),
             "Jack".to_string(),
             r#"{"data_provider": "Jack", "data_consumer": "Research Institute", "dataset": "Anonymous Health Records", "usage_terms": "Research purposes only", "compensation": 500}"#.to_string(),
