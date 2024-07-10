@@ -1,17 +1,19 @@
+// File: src/democracy.rs
+
 use std::collections::HashMap;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};
 use crate::blockchain::Blockchain;
 
-// NEW CODE BLOCK 1: START
+// Enum to represent different categories of proposals
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum ProposalCategory {
     Constitutional,
     Economic,
     Technical,
 }
-// NEW CODE BLOCK 1: END
 
+// Struct to represent a proposal
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Proposal {
     pub id: String,
@@ -22,13 +24,12 @@ pub struct Proposal {
     pub voting_ends_at: DateTime<Utc>,
     pub status: ProposalStatus,
     pub proposal_type: ProposalType,
-    // NEW CODE BLOCK 2: START
     pub category: ProposalCategory,
     pub required_quorum: f64,
     pub execution_timestamp: Option<DateTime<Utc>>,
-    // NEW CODE BLOCK 2: END
 }
 
+// Enum to represent the status of a proposal
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum ProposalStatus {
     Active,
@@ -37,6 +38,7 @@ pub enum ProposalStatus {
     Implemented,
 }
 
+// Enum to represent the type of a proposal
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum ProposalType {
     Constitutional,
@@ -44,6 +46,7 @@ pub enum ProposalType {
     NetworkUpgrade,
 }
 
+// Struct to represent a vote
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Vote {
     pub voter: String,
@@ -53,11 +56,12 @@ pub struct Vote {
     pub timestamp: DateTime<Utc>,
 }
 
-// NEW CODE BLOCK 3: START
+// Trait for executable proposals
 pub trait ExecutableProposal {
     fn execute(&self, blockchain: &mut Blockchain) -> Result<(), String>;
 }
 
+// Struct to represent a parameter change proposal
 pub struct ParameterChangeProposal {
     pub parameter_name: String,
     pub new_value: String,
@@ -71,14 +75,12 @@ impl ExecutableProposal for ParameterChangeProposal {
         Ok(())
     }
 }
-// NEW CODE BLOCK 3: END
 
+// Struct to represent the democratic system
 pub struct DemocraticSystem {
     proposals: HashMap<String, Proposal>,
     votes: HashMap<String, Vec<Vote>>,
-    // NEW CODE BLOCK 4: START
     executable_proposals: HashMap<String, Box<dyn ExecutableProposal>>,
-    // NEW CODE BLOCK 4: END
 }
 
 impl DemocraticSystem {
@@ -90,7 +92,7 @@ impl DemocraticSystem {
         }
     }
 
-    // NEW CODE BLOCK 6: START
+    // Function to create a proposal
     pub fn create_proposal(&mut self, title: String, description: String, proposer: String, 
                            voting_duration: Duration, proposal_type: ProposalType,
                            category: ProposalCategory, required_quorum: f64, 
@@ -112,8 +114,8 @@ impl DemocraticSystem {
         self.proposals.insert(id.clone(), proposal);
         id
     }
-    // NEW CODE BLOCK 6: END
 
+    // Function to vote on a proposal
     pub fn vote(&mut self, voter: String, proposal_id: String, in_favor: bool, weight: f64) -> Result<(), String> {
         let proposal = self.proposals.get(&proposal_id).ok_or("Proposal not found")?;
         
@@ -137,7 +139,7 @@ impl DemocraticSystem {
         Ok(())
     }
 
-    // NEW CODE BLOCK 7: START
+    // Function to tally votes for a proposal
     pub fn tally_votes(&mut self, proposal_id: &str) -> Result<(), String> {
         let proposal = self.proposals.get_mut(proposal_id).ok_or("Proposal not found")?;
         
@@ -167,7 +169,6 @@ impl DemocraticSystem {
 
         Ok(())
     }
-    // NEW CODE BLOCK 7: END
 
     pub fn get_proposal(&self, proposal_id: &str) -> Option<&Proposal> {
         self.proposals.get(proposal_id)
@@ -194,7 +195,6 @@ impl DemocraticSystem {
         Ok(())
     }
 
-    // NEW CODE BLOCK 8: START
     pub fn add_executable_proposal(&mut self, proposal_id: String, executable: Box<dyn ExecutableProposal>) {
         self.executable_proposals.insert(proposal_id, executable);
     }
@@ -214,5 +214,4 @@ impl DemocraticSystem {
             Err("No executable found for this proposal".to_string())
         }
     }
-    // NEW CODE BLOCK 8: END
 }

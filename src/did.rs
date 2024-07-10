@@ -1,4 +1,4 @@
-// src/did.rs
+// File: src/did.rs
 
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Verifier};
@@ -6,6 +6,7 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// Struct to represent a decentralized identity
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DecentralizedIdentity {
     pub id: String,
@@ -16,6 +17,7 @@ pub struct DecentralizedIdentity {
     pub attributes: HashMap<String, String>,
 }
 
+// Module for (de)serialization of the public key
 mod public_key_serde {
     use ed25519_dalek::PublicKey;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -38,6 +40,7 @@ mod public_key_serde {
 }
 
 impl DecentralizedIdentity {
+    // Function to create a new decentralized identity
     pub fn new(attributes: HashMap<String, String>) -> (Self, Keypair) {
         let mut csprng = OsRng {};
         let keypair: Keypair = Keypair::generate(&mut csprng);
@@ -57,11 +60,13 @@ impl DecentralizedIdentity {
         )
     }
 
+    // Function to verify a signature
     pub fn verify_signature(&self, message: &[u8], signature: &Signature) -> bool {
         self.public_key.verify(message, signature).is_ok()
     }
 }
 
+// Struct to manage decentralized identities
 pub struct DidManager {
     identities: HashMap<String, DecentralizedIdentity>,
 }
@@ -73,6 +78,7 @@ impl DidManager {
         }
     }
 
+    // Function to register a decentralized identity
     pub fn register_did(&mut self, did: DecentralizedIdentity) -> Result<(), String> {
         if self.identities.contains_key(&did.id) {
             return Err("DiD already exists".to_string());
@@ -85,6 +91,7 @@ impl DidManager {
         self.identities.get(id)
     }
 
+    // Function to update the reputation of a decentralized identity
     pub fn update_reputation(&mut self, id: &str, delta: f64) -> Result<(), String> {
         let did = self.identities.get_mut(id).ok_or("DiD not found")?;
         did.reputation += delta;
@@ -92,6 +99,7 @@ impl DidManager {
         Ok(())
     }
 
+    // Function to verify the identity of a decentralized identity
     pub fn verify_identity(&self, id: &str, message: &[u8], signature: &Signature) -> bool {
         if let Some(did) = self.identities.get(id) {
             did.verify_signature(message, signature)
@@ -100,12 +108,14 @@ impl DidManager {
         }
     }
 
+    // Function to update the attributes of a decentralized identity
     pub fn update_attributes(&mut self, id: &str, attributes: HashMap<String, String>) -> Result<(), String> {
         let did = self.identities.get_mut(id).ok_or("DiD not found")?;
         did.attributes.extend(attributes);
         Ok(())
     }
 
+    // Function to revoke a decentralized identity
     pub fn revoke_did(&mut self, id: &str) -> Result<(), String> {
         if self.identities.remove(id).is_some() {
             Ok(())
@@ -114,6 +124,7 @@ impl DidManager {
         }
     }
 
+    // Function to list all decentralized identities
     pub fn list_dids(&self) -> Vec<String> {
         self.identities.keys().cloned().collect()
     }
@@ -138,7 +149,6 @@ mod tests {
 
         assert!(did.verify_signature(message, &signature));
     }
-
 
     #[test]
     fn test_did_manager() {

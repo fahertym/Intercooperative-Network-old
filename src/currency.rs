@@ -1,9 +1,9 @@
-// src/currency.rs
+// File: src/currency.rs
 
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-
+use std::fmt;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub enum CurrencyType {
@@ -16,6 +16,15 @@ pub enum CurrencyType {
     Processing,
     Energy,
     Custom(String),
+}
+
+impl fmt::Display for CurrencyType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CurrencyType::Custom(name) => write!(f, "Custom({})", name),
+            _ => write!(f, "{:?}", self),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -115,7 +124,6 @@ impl CurrencySystem {
         }
     }
 }
-
 
 pub struct Wallet {
     balances: HashMap<CurrencyType, f64>,

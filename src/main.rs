@@ -9,7 +9,7 @@ mod transaction_validator;
 mod cli;
 
 use crate::blockchain::Blockchain;
-use crate::smart_contract::{SmartContract, ContractType, parse_contract};
+use crate::smart_contract::parse_contract;
 use crate::consensus::PoCConsensus;
 use crate::currency::CurrencySystem;
 use crate::democracy::DemocraticSystem;
@@ -17,8 +17,6 @@ use crate::did::DidManager;
 use crate::network::Network;
 use crate::transaction_validator::TransactionValidator;
 use crate::cli::run_cli;
-
-use std::collections::HashMap;
 
 fn main() {
     println!("Intercooperative Network (ICN) Project");

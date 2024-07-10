@@ -1,7 +1,10 @@
+// File: src/cli.rs
+
 use crate::blockchain::Blockchain;
 use crate::smart_contract::parse_contract;
 use std::io::{self, Write};
 
+// Function to run the command-line interface
 pub fn run_cli(blockchain: &mut Blockchain) {
     loop {
         print_menu();
@@ -17,6 +20,7 @@ pub fn run_cli(blockchain: &mut Blockchain) {
     }
 }
 
+// Function to print the menu
 fn print_menu() {
     println!("\n--- Smart Contract CLI ---");
     println!("1. Deploy a new smart contract");
@@ -25,6 +29,7 @@ fn print_menu() {
     println!("4. Exit");
 }
 
+// Function to get user input
 fn get_user_input(prompt: &str) -> String {
     print!("{}", prompt);
     io::stdout().flush().unwrap();
@@ -33,6 +38,7 @@ fn get_user_input(prompt: &str) -> String {
     input
 }
 
+// Function to deploy a smart contract
 fn deploy_contract(blockchain: &mut Blockchain) {
     println!("Enter the smart contract details (type 'END' on a new line when finished):");
     let mut contract_input = String::new();
@@ -55,6 +61,7 @@ fn deploy_contract(blockchain: &mut Blockchain) {
     }
 }
 
+// Function to execute smart contracts
 fn execute_contracts(blockchain: &mut Blockchain) {
     match blockchain.execute_smart_contracts() {
         Ok(_) => println!("Smart contracts executed successfully!"),
@@ -62,6 +69,7 @@ fn execute_contracts(blockchain: &mut Blockchain) {
     }
 }
 
+// Function to view the blockchain state
 fn view_blockchain_state(blockchain: &Blockchain) {
     println!("Blockchain state:");
     println!("Number of blocks: {}", blockchain.chain.len());

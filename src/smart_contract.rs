@@ -1,8 +1,10 @@
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
-use chrono::{DateTime, Utc, Duration};
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
+use chrono::{DateTime, Utc};
+use std::time::Duration;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ContractType {
     AssetTransfer,
     Proposal,
@@ -11,98 +13,25 @@ pub enum ContractType {
     ResourceAllocation,
     IdentityVerification,
     CooperativeMembership,
+    Custom(String),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartContract {
     pub id: String,
     pub contract_type: ContractType,
     pub creator: String,
-    #[serde(with = "chrono::serde::ts_seconds")]
     pub created_at: DateTime<Utc>,
     pub content: String,
-    pub state: HashMap<String, String>,
+    pub status: ContractStatus,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AssetTransferContract {
-    pub from: String,
-    pub to: String,
-    pub asset: String,
-    pub amount: f64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProposalContract {
-    pub title: String,
-    pub description: String,
-    #[serde(with = "duration_seconds")]
-    pub voting_period: Duration,
-    pub options: Vec<String>,
-    pub quorum: f64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ServiceAgreementContract {
-    pub service_provider: String,
-    pub client: String,
-    pub service_description: String,
-    pub payment_amount: f64,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub deadline: DateTime<Utc>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GovernanceVoteContract {
-    pub proposal_id: String,
-    pub voter: String,
-    pub vote: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ResourceAllocationContract {
-    pub resource_type: String,
-    pub amount: f64,
-    pub recipient: String,
-    #[serde(with = "duration_seconds")]
-    pub duration: Duration,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct IdentityVerificationContract {
-    pub subject: String,
-    pub verifier: String,
-    pub credentials: HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CooperativeMembershipContract {
-    pub cooperative_id: String,
-    pub member_id: String,
-    pub membership_type: String,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub join_date: DateTime<Utc>,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct ExecutionEnvironment {
-    pub balances: HashMap<String, HashMap<String, f64>>,
-    pub votes: HashMap<String, HashMap<String, i32>>,
-    pub identities: HashMap<String, HashMap<String, String>>,
-    pub cooperatives: HashMap<String, Vec<String>>,
-    pub resources: HashMap<String, HashMap<String, f64>>,
-}
-
-impl ExecutionEnvironment {
-    pub fn new() -> Self {
-        ExecutionEnvironment {
-            balances: HashMap::new(),
-            votes: HashMap::new(),
-            identities: HashMap::new(),
-            cooperatives: HashMap::new(),
-            resources: HashMap::new(),
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ContractStatus {
+    Pending,
+    Active,
+    Completed,
+    Terminated,
 }
 
 impl SmartContract {
@@ -113,11 +42,27 @@ impl SmartContract {
             creator,
             created_at: Utc::now(),
             content,
-            state: HashMap::new(),
+            status: ContractStatus::Pending,
         }
     }
 
-    pub fn execute(&mut self, env: &mut ExecutionEnvironment) -> Result<(), String> {
+    pub fn activate(&mut self) {
+        self.status = ContractStatus::Active;
+    }
+
+    pub fn complete(&mut self) {
+        self.status = ContractStatus::Completed;
+    }
+
+    pub fn terminate(&mut self) {
+        self.status = ContractStatus::Terminated;
+    }
+
+    pub fn execute(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
+        if self.status != ContractStatus::Active {
+            return Err(format!("Contract is not active. Current status: {:?}", self.status));
+        }
+
         match self.contract_type {
             ContractType::AssetTransfer => self.execute_asset_transfer(env),
             ContractType::Proposal => self.execute_proposal(env),
@@ -126,294 +71,432 @@ impl SmartContract {
             ContractType::ResourceAllocation => self.execute_resource_allocation(env),
             ContractType::IdentityVerification => self.execute_identity_verification(env),
             ContractType::CooperativeMembership => self.execute_cooperative_membership(env),
+            ContractType::Custom(ref name) => self.execute_custom_contract(env, name),
         }
     }
 
-    fn execute_asset_transfer(&mut self, env: &mut ExecutionEnvironment) -> Result<(), String> {
-        let contract: AssetTransferContract = serde_json::from_str(&self.content)
-            .map_err(|e| format!("Failed to parse AssetTransferContract: {}", e))?;
+    fn execute_asset_transfer(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
+        let params: AssetTransferParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse asset transfer params: {}", e))?;
 
-        let from_balance = env.balances.entry(contract.from.clone()).or_default();
-        let balance = from_balance.entry(contract.asset.clone()).or_default();
-
-        if *balance < contract.amount {
-            return Err("Insufficient funds".to_string());
-        }
-
-        *balance -= contract.amount;
-
-        let to_balance = env.balances.entry(contract.to.clone()).or_default();
-        *to_balance.entry(contract.asset.clone()).or_default() += contract.amount;
-
-        Ok(())
-    }
-
-    fn execute_proposal(&mut self, env: &mut ExecutionEnvironment) -> Result<(), String> {
-        let contract: ProposalContract = serde_json::from_str(&self.content)
-            .map_err(|e| format!("Failed to parse ProposalContract: {}", e))?;
-
-        let voting_end = self.created_at + contract.voting_period;
-        if Utc::now() < voting_end {
-            return Err("Voting period has not ended yet".to_string());
-        }
-
-        let votes = env.votes.get(&self.id).ok_or("No votes found")?;
-        let total_votes: i32 = votes.values().sum();
-        
-        if (total_votes as f64) < contract.quorum {
-            return Err("Quorum not reached".to_string());
-        }
-
-        let mut max_votes = 0;
-        let mut winning_option = String::new();
-
-        for (option, vote_count) in votes {
-            if *vote_count > max_votes {
-                max_votes = *vote_count;
-                winning_option = option.clone();
+        if let Some(from_balance) = env.balances.get_mut(&params.from) {
+            if let Some(amount) = from_balance.get_mut(&params.asset) {
+                if *amount >= params.amount {
+                    *amount -= params.amount;
+                    env.balances
+                        .entry(params.to.clone())
+                        .or_insert_with(HashMap::new)
+                        .entry(params.asset.clone())
+                        .and_modify(|e| *e += params.amount)
+                        .or_insert(params.amount);
+                    Ok(())
+                } else {
+                    Err("Insufficient balance".to_string())
+                }
+            } else {
+                Err("Asset not found in sender's balance".to_string())
             }
+        } else {
+            Err("Sender not found".to_string())
         }
+    }
 
-        self.state.insert("result".to_string(), winning_option);
+
+    fn execute_proposal(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
+        let params: ProposalParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse proposal params: {}", e))?;
+
+        // Convert time::Duration to chrono::Duration if needed
+        let _voting_period = chrono::Duration::from_std(params.voting_period.try_into().map_err(|e| format!("Invalid duration: {}", e))?).map_err(|e| format!("Failed to convert duration: {}", e))?;
+        env.proposals.insert(self.id.clone(), params);
+        // Use voting_period here if needed
         Ok(())
     }
 
-    fn execute_service_agreement(&mut self, env: &mut ExecutionEnvironment) -> Result<(), String> {
-        let contract: ServiceAgreementContract = serde_json::from_str(&self.content)
-            .map_err(|e| format!("Failed to parse ServiceAgreementContract: {}", e))?;
 
-        if Utc::now() > contract.deadline {
-            return Err("Service agreement deadline has passed".to_string());
-        }
+    fn execute_service_agreement(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
+        let params: ServiceAgreementParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse service agreement params: {}", e))?;
 
-        let client_balance = env.balances.entry(contract.client.clone()).or_default();
-        let balance = client_balance.entry("ICN_TOKEN".to_string()).or_default();
-
-        if *balance < contract.payment_amount {
-            return Err("Insufficient funds for payment".to_string());
-        }
-
-        *balance -= contract.payment_amount;
-
-        let provider_balance = env.balances.entry(contract.service_provider.clone()).or_default();
-        *provider_balance.entry("ICN_TOKEN".to_string()).or_default() += contract.payment_amount;
-
-        self.state.insert("status".to_string(), "completed".to_string());
+        env.service_agreements.insert(self.id.clone(), params);
         Ok(())
     }
 
-    fn execute_governance_vote(&mut self, env: &mut ExecutionEnvironment) -> Result<(), String> {
-        let contract: GovernanceVoteContract = serde_json::from_str(&self.content)
-            .map_err(|e| format!("Failed to parse GovernanceVoteContract: {}", e))?;
+    fn execute_governance_vote(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
+        let params: GovernanceVoteParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse governance vote params: {}", e))?;
 
-        let votes = env.votes.entry(contract.proposal_id.clone()).or_default();
-        *votes.entry(contract.vote.clone()).or_default() += 1;
-
+        env.votes.entry(params.proposal_id)
+            .or_insert_with(Vec::new)
+            .push((params.voter, params.vote));
         Ok(())
     }
 
-    fn execute_resource_allocation(&mut self, env: &mut ExecutionEnvironment) -> Result<(), String> {
-        let contract: ResourceAllocationContract = serde_json::from_str(&self.content)
-            .map_err(|e| format!("Failed to parse ResourceAllocationContract: {}", e))?;
-
-        let resources = env.resources.entry(contract.resource_type.clone()).or_default();
-        let available = resources.entry("available".to_string()).or_default();
-
-        if *available < contract.amount {
-            return Err("Insufficient resources".to_string());
-        }
-
-        *available -= contract.amount;
-        *resources.entry(contract.recipient.clone()).or_default() += contract.amount;
-
-        self.state.insert("expiration".to_string(), (Utc::now() + contract.duration).to_rfc3339());
+    fn execute_resource_allocation(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
+        let params: ResourceAllocationParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse resource allocation params: {}", e))?;
+    
+        env.resource_allocations.insert(self.id.clone(), params);
         Ok(())
     }
 
-    fn execute_identity_verification(&mut self, env: &mut ExecutionEnvironment) -> Result<(), String> {
-        let contract: IdentityVerificationContract = serde_json::from_str(&self.content)
-            .map_err(|e| format!("Failed to parse IdentityVerificationContract: {}", e))?;
+    fn execute_identity_verification(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
+        let params: IdentityVerificationParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse identity verification params: {}", e))?;
 
-        let identity = env.identities.entry(contract.subject.clone()).or_default();
-        for (key, value) in contract.credentials {
-            identity.insert(key, value);
-        }
-
-        self.state.insert("verified_by".to_string(), contract.verifier);
+        env.identities.insert(params.user_id.clone(), params);
         Ok(())
     }
 
-    fn execute_cooperative_membership(&mut self, env: &mut ExecutionEnvironment) -> Result<(), String> {
-        let contract: CooperativeMembershipContract = serde_json::from_str(&self.content)
-            .map_err(|e| format!("Failed to parse CooperativeMembershipContract: {}", e))?;
-
-        let members = env.cooperatives.entry(contract.cooperative_id.clone()).or_default();
-        members.push(contract.member_id.clone());
-        self.state.insert("membership_type".to_string(), contract.membership_type);
+    fn execute_cooperative_membership(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
+        let params: CooperativeMembershipParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse cooperative membership params: {}", e))?;
+    
+        env.memberships.insert(params.user_id.clone(), params);
+        Ok(())
+    }
+    
+    fn execute_custom_contract(&self, env: &mut ExecutionEnvironment, name: &str) -> Result<(), String> {
+        env.custom_contracts.insert(self.id.clone(), (name.to_string(), self.content.clone()));
         Ok(())
     }
 }
 
-impl SmartContract {
-    pub fn create_asset_transfer(from: String, to: String, asset: String, amount: f64) -> Self {
-        let contract = AssetTransferContract { from, to, asset, amount };
-        SmartContract::new(
-            ContractType::AssetTransfer,
-            "Creator".to_string(),
-            serde_json::to_string(&contract).unwrap(),
-        )
+pub struct ExecutionEnvironment {
+    pub balances: HashMap<String, HashMap<String, f64>>,
+    pub proposals: HashMap<String, ProposalParams>,
+    pub votes: HashMap<String, Vec<(String, bool)>>,
+    pub service_agreements: HashMap<String, ServiceAgreementParams>,
+    pub resource_allocations: HashMap<String, ResourceAllocationParams>,
+    pub identities: HashMap<String, IdentityVerificationParams>,
+    pub memberships: HashMap<String, CooperativeMembershipParams>,
+    pub custom_contracts: HashMap<String, (String, String)>,
+}
+
+impl ExecutionEnvironment {
+    pub fn new() -> Self {
+        ExecutionEnvironment {
+            balances: HashMap::new(),
+            proposals: HashMap::new(),
+            votes: HashMap::new(),
+            service_agreements: HashMap::new(),
+            resource_allocations: HashMap::new(),
+            identities: HashMap::new(),
+            memberships: HashMap::new(),
+            custom_contracts: HashMap::new(),
+        }
     }
 
-    pub fn create_proposal(title: String, description: String, voting_period: Duration, options: Vec<String>, quorum: f64) -> Self {
-        let contract = ProposalContract {
-            title,
-            description,
-            voting_period,
-            options,
-            quorum,
-        };
-        SmartContract::new(
-            ContractType::Proposal,
-            "Creator".to_string(),
-            serde_json::to_string(&contract).unwrap(),
-        )
+    pub fn add_balance(&mut self, user: &str, asset: &str, amount: f64) {
+        self.balances
+            .entry(user.to_string())
+            .or_insert_with(HashMap::new)
+            .entry(asset.to_string())
+            .and_modify(|balance| *balance += amount)
+            .or_insert(amount);
     }
 
-    pub fn create_service_agreement(service_provider: String, client: String, service_description: String, payment_amount: f64, deadline: DateTime<Utc>) -> Self {
-        let contract = ServiceAgreementContract {
-            service_provider,
-            client,
-            service_description,
-            payment_amount,
-            deadline,
-        };
-        SmartContract::new(
-            ContractType::ServiceAgreement,
-            "Creator".to_string(),
-            serde_json::to_string(&contract).unwrap(),
-        )
+    pub fn get_balance(&self, user: &str, asset: &str) -> f64 {
+        self.balances
+            .get(user)
+            .and_then(|assets| assets.get(asset))
+            .cloned()
+            .unwrap_or(0.0)
     }
 
-    pub fn create_governance_vote(proposal_id: String, voter: String, vote: String) -> Self {
-        let contract = GovernanceVoteContract {
-            proposal_id,
-            voter,
-            vote,
-        };
-        SmartContract::new(
-            ContractType::GovernanceVote,
-            "Creator".to_string(),
-            serde_json::to_string(&contract).unwrap(),
-        )
-    }
-
-    pub fn create_resource_allocation(resource_type: String, amount: f64, recipient: String, duration: Duration) -> Self {
-        let contract = ResourceAllocationContract {
-            resource_type,
-            amount,
-            recipient,
-            duration,
-        };
-        SmartContract::new(
-            ContractType::ResourceAllocation,
-            "Creator".to_string(),
-            serde_json::to_string(&contract).unwrap(),
-        )
-    }
-
-    pub fn create_identity_verification(subject: String, verifier: String, credentials: HashMap<String, String>) -> Self {
-        let contract = IdentityVerificationContract {
-            subject,
-            verifier,
-            credentials,
-        };
-        SmartContract::new(
-            ContractType::IdentityVerification,
-            "Creator".to_string(),
-            serde_json::to_string(&contract).unwrap(),
-        )
-    }
-
-    pub fn create_cooperative_membership(cooperative_id: String, member_id: String, membership_type: String, join_date: DateTime<Utc>) -> Self {
-        let contract = CooperativeMembershipContract {
-            cooperative_id,
-            member_id,
-            membership_type,
-            join_date,
-        };
-        SmartContract::new(
-            ContractType::CooperativeMembership,
-            "Creator".to_string(),
-            serde_json::to_string(&contract).unwrap(),
-        )
+    pub fn tally_votes(&self, proposal_id: &str) -> (usize, usize) {
+        let votes = self.votes.get(proposal_id).cloned().unwrap_or_default();
+        let (approve, reject): (Vec<_>, Vec<_>) = votes.into_iter().partition(|(_, vote)| *vote);
+        (approve.len(), reject.len())
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AssetTransferParams {
+    from: String,
+    to: String,
+    asset: String,
+    amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProposalParams {
+    title: String,
+    description: String,
+    options: Vec<String>,
+    voting_period: Duration,
+    quorum: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GovernanceVoteParams {
+    proposal_id: String,
+    voter: String,
+    vote: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ServiceAgreementParams {
+    provider: String,
+    consumer: String,
+    service: String,
+    terms: String,
+    start_date: DateTime<Utc>,
+    end_date: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ResourceAllocationParams {
+    resource: String,
+    amount: f64,
+    recipient: String,
+    duration: Duration,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IdentityVerificationParams {
+    user_id: String,
+    verification_data: String,
+    verification_method: String,
+    expiration: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CooperativeMembershipParams {
+    user_id: String,
+    membership_type: String,
+    join_date: DateTime<Utc>,
+    subscription_period: Duration,
+}
+
 
 pub fn parse_contract(input: &str) -> Result<SmartContract, String> {
     let lines: Vec<&str> = input.lines().collect();
     if lines.len() < 2 {
-        return Err("Invalid contract format".to_string());
+        return Err("Invalid input format".to_string());
     }
 
-    let (contract_type, content) = match lines[0].trim() {
-        "Asset Transfer" => {
-            let contract = AssetTransferContract {
-                from: lines.get(2).ok_or("Missing 'from' field")?.trim().to_string(),
-                to: lines.get(3).ok_or("Missing 'to' field")?.trim().to_string(),
-                asset: lines.get(4).ok_or("Missing 'asset' field")?.trim().to_string(),
-                amount: lines.get(5).ok_or("Missing 'amount' field")?
-                    .trim().parse().map_err(|_| "Invalid amount")?,
-            };
-            (ContractType::AssetTransfer, serde_json::to_string(&contract).unwrap())
-        },
-        "Proposal" => {
-            let contract = ProposalContract {
-                title: lines.get(2).ok_or("Missing 'title' field")?.trim().to_string(),
-                description: lines.get(3).ok_or("Missing 'description' field")?.trim().to_string(),
-                voting_period: Duration::seconds(lines.get(4).ok_or("Missing 'voting period' field")?
-                    .trim().parse().map_err(|_| "Invalid voting period")?),
-                options: lines[5..].iter().take_while(|&&s| !s.starts_with("Quorum:")).map(|s| s.trim().to_string()).collect(),
-                quorum: lines.iter().find(|&&s| s.starts_with("Quorum:"))
-                    .ok_or("Missing 'Quorum' field")?
-                    .trim_start_matches("Quorum:")
-                    .trim().parse().map_err(|_| "Invalid quorum")?,
-            };
-            (ContractType::Proposal, serde_json::to_string(&contract).unwrap())
-        },
-        "Service Agreement" => {
-            let contract = ServiceAgreementContract {
-                service_provider: lines.get(2).ok_or("Missing 'service provider' field")?.trim().to_string(),
-                client: lines.get(3).ok_or("Missing 'client' field")?.trim().to_string(),
-                service_description: lines.get(4).ok_or("Missing 'service description' field")?.trim().to_string(),
-                payment_amount: lines.get(5).ok_or("Missing 'payment amount' field")?
-                    .trim().parse().map_err(|_| "Invalid payment amount")?,
-                deadline: DateTime::parse_from_rfc3339(lines.get(6).ok_or("Missing 'deadline' field")?.trim())
-                    .map_err(|_| "Invalid deadline")?.with_timezone(&Utc),
-            };
-            (ContractType::ServiceAgreement, serde_json::to_string(&contract).unwrap())
-        },
-        _ => return Err("Unknown contract type".to_string()),
+    let contract_type = match lines[0] {
+        "Asset Transfer" => ContractType::AssetTransfer,
+        "Proposal" => ContractType::Proposal,
+        "Service Agreement" => ContractType::ServiceAgreement,
+        "Governance Vote" => ContractType::GovernanceVote,
+        "Resource Allocation" => ContractType::ResourceAllocation,
+        "Identity Verification" => ContractType::IdentityVerification,
+        "Cooperative Membership" => ContractType::CooperativeMembership,
+        custom => ContractType::Custom(custom.to_string()),
     };
 
-    Ok(SmartContract::new(contract_type, "Creator".to_string(), content))
+    let creator = lines[1].split(": ").nth(1).ok_or("Invalid creator format")?;
+    let content = lines[2..].join("\n");
+
+    Ok(SmartContract::new(contract_type, creator.to_string(), content))
 }
 
-mod duration_seconds {
-    use serde::{self, Deserialize, Serializer, Deserializer};
-    use chrono::Duration;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    pub fn serialize<S>(dur: &Duration, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_i64(dur.num_seconds())
+    #[test]
+    fn test_parse_contract() {
+        let input = r#"Asset Transfer
+Creator: Alice
+{
+    "from": "Alice",
+    "to": "Bob",
+    "asset": "ICN_TOKEN",
+    "amount": 100.0
+}"#;
+
+        let contract = parse_contract(input).unwrap();
+        assert!(matches!(contract.contract_type, ContractType::AssetTransfer));
+        assert_eq!(contract.creator, "Alice");
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let secs = i64::deserialize(deserializer)?;
-        Ok(Duration::seconds(secs))
+    #[test]
+    fn test_execute_asset_transfer() {
+        let mut env = ExecutionEnvironment::new();
+        env.add_balance("Alice", "ICN_TOKEN", 1000.0);
+
+        let contract = SmartContract::new(
+            ContractType::AssetTransfer,
+            "Alice".to_string(),
+            r#"{"from": "Alice", "to": "Bob", "asset": "ICN_TOKEN", "amount": 100.0}"#.to_string(),
+        );
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.get_balance("Alice", "ICN_TOKEN"), 900.0);
+        assert_eq!(env.get_balance("Bob", "ICN_TOKEN"), 100.0);
     }
+
+    #[test]
+    fn test_execute_proposal() {
+        let mut env = ExecutionEnvironment::new();
+        let contract = SmartContract::new(
+            ContractType::Proposal,
+            "Charlie".to_string(),
+            r#"{"title": "New Project", "description": "Start a community garden", "options": ["Approve", "Reject"], "voting_period": 604800, "quorum": 0.5}"#.to_string(),
+        );
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.proposals.len(), 1);
+        assert!(env.proposals.contains_key(&contract.id));
+    }
+
+    #[test]
+    fn test_execute_governance_vote() {
+        let mut env = ExecutionEnvironment::new();
+        let proposal_id = "proposal_1".to_string();
+        let contract = SmartContract::new(
+            ContractType::GovernanceVote,
+            "Dave".to_string(),
+            format!(r#"{{"proposal_id": "{}", "voter": "Dave", "vote": true}}"#, proposal_id),
+        );
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.votes.len(), 1);
+        assert_eq!(env.votes[&proposal_id], vec![("Dave".to_string(), true)]);
+    }
+
+    #[test]
+    fn test_execute_service_agreement() {
+        let mut env = ExecutionEnvironment::new();
+        let contract = SmartContract::new(
+            ContractType::ServiceAgreement,
+            "Eve".to_string(),
+            r#"{"provider": "Eve", "consumer": "Frank", "service": "Web Development", "terms": "Develop a website for 1000 ICN_TOKEN", "start_date": "2023-07-01T00:00:00Z", "end_date": "2023-08-01T00:00:00Z"}"#.to_string(),
+        );
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.service_agreements.len(), 1);
+        assert!(env.service_agreements.contains_key(&contract.id));
+    }
+
+    #[test]
+    fn test_execute_resource_allocation() {
+        let mut env = ExecutionEnvironment::new();
+        let contract = SmartContract::new(
+            ContractType::ResourceAllocation,
+            "Grace".to_string(),
+            r#"{"resource": "Computing Power", "amount": 100.0, "recipient": "Research Team", "duration": 2592000}"#.to_string(),
+        );
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.resource_allocations.len(), 1);
+        assert!(env.resource_allocations.contains_key(&contract.id));
+    }
+
+    #[test]
+    fn test_execute_identity_verification() {
+        let mut env = ExecutionEnvironment::new();
+        let contract = SmartContract::new(
+            ContractType::IdentityVerification,
+            "Henry".to_string(),
+            r#"{"user_id": "Henry", "verification_data": "Passport: AB123456", "verification_method": "Government ID", "expiration": "2025-07-01T00:00:00Z"}"#.to_string(),
+        );
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.identities.len(), 1);
+        assert!(env.identities.contains_key("Henry"));
+    }
+
+    #[test]
+    fn test_execute_cooperative_membership() {
+        let mut env = ExecutionEnvironment::new();
+        let contract = SmartContract::new(
+            ContractType::CooperativeMembership,
+            "Ivy".to_string(),
+            r#"{"user_id": "Ivy", "membership_type": "Full Member", "join_date": "2023-07-01T00:00:00Z", "subscription_period": 31536000}"#.to_string(),
+        );
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.memberships.len(), 1);
+        assert!(env.memberships.contains_key("Ivy"));
+    }
+
+    #[test]
+    fn test_execute_custom_contract() {
+        let mut env = ExecutionEnvironment::new();
+        let contract = SmartContract::new(
+            ContractType::Custom("DataSharing".to_string()),
+            "Jack".to_string(),
+            r#"{"data_provider": "Jack", "data_consumer": "Research Institute", "dataset": "Anonymous Health Records", "usage_terms": "Research purposes only", "compensation": 500}"#.to_string(),
+        );
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.custom_contracts.len(), 1);
+        assert!(env.custom_contracts.contains_key(&contract.id));
+    }
+
+    #[test]
+    fn test_contract_lifecycle() {
+        let mut contract = SmartContract::new(
+            ContractType::AssetTransfer,
+            "Alice".to_string(),
+            r#"{"from": "Alice", "to": "Bob", "asset": "ICN_TOKEN", "amount": 100.0}"#.to_string(),
+        );
+
+        assert_eq!(contract.status, ContractStatus::Pending);
+
+        contract.activate();
+        assert_eq!(contract.status, ContractStatus::Active);
+
+        contract.complete();
+        assert_eq!(contract.status, ContractStatus::Completed);
+
+        contract.terminate();
+        assert_eq!(contract.status, ContractStatus::Terminated);
+    }
+}
+
+// Additional helper functions
+
+pub fn validate_proposal(proposal: &ProposalParams) -> Result<(), String> {
+    if proposal.title.is_empty() {
+        return Err("Proposal title cannot be empty".to_string());
+    }
+    if proposal.options.len() < 2 {
+        return Err("Proposal must have at least two options".to_string());
+    }
+    if proposal.quorum < 0.0 || proposal.quorum > 1.0 {
+        return Err("Quorum must be between 0 and 1".to_string());
+    }
+    Ok(())
+}
+
+pub fn calculate_vote_result(votes: &[(String, bool)], quorum: f64, total_members: usize) -> Option<bool> {
+    let total_votes = votes.len();
+    if (total_votes as f64 / total_members as f64) < quorum {
+        return None; // Quorum not reached
+    }
+
+    let approve_votes = votes.iter().filter(|(_, vote)| *vote).count();
+    Some(approve_votes > total_votes / 2)
+}
+
+pub fn verify_identity(verification_data: &str, verification_method: &str) -> Result<bool, String> {
+    // This is a placeholder function. In a real-world scenario, this would involve
+    // complex verification processes, potentially interfacing with external systems.
+    match verification_method {
+        "Government ID" => Ok(verification_data.starts_with("Passport: ")),
+        "Biometric" => Ok(verification_data.contains("Fingerprint") || verification_data.contains("Facial Recognition")),
+        "Two-Factor" => Ok(verification_data.contains("SMS Code") || verification_data.contains("Authenticator App")),
+        _ => Err(format!("Unsupported verification method: {}", verification_method)),
+    }
+}
+
+pub fn calculate_resource_usage(allocations: &[ResourceAllocationParams]) -> HashMap<String, f64> {
+    let mut usage = HashMap::new();
+    for allocation in allocations.iter() {
+        *usage.entry(allocation.resource.clone()).or_insert(0.0) += allocation.amount;
+    }
+    usage
 }

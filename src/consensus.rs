@@ -1,4 +1,4 @@
-// src/consensus.rs
+// File: src/consensus.rs
 
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
