@@ -1,7 +1,8 @@
-// ===============================================
-// Smart Contract Module
-// ===============================================
-// This module handles the operations related to smart contracts,
-// including their validation and execution.
+// src/smart_contract/mod.rs
 
-pub mod smart_contract;
+mod smart_contract;
+
+pub use smart_contract::{SmartContract, ExecutionEnvironment};
+//use crate::vm::opcode::Opcode;
+// Remove or comment out the following line:
+// pub use crate::blockchain::TransactionValidator;

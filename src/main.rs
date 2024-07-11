@@ -1,20 +1,12 @@
-// ===============================================
-// Main File for ICN Node Initialization and Execution
-// ===============================================
-// This file is the entry point for the ICN Node application. It initializes the node,
-// sets up the blockchain and related systems, and executes example operations.
-//
-// Key concepts:
-// - Node Initialization: Setting up the ICN Node with all necessary components.
-// - Blockchain Interaction: Adding transactions, creating blocks, and deploying smart contracts.
-// - CSCL Compiler: Compiling and executing CSCL code for smart contracts.
+// src/main.rs
 
 use icn_node::{
     IcnNode, CSCLCompiler, Blockchain, Transaction, PoCConsensus, DemocraticSystem,
     ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, Opcode, Value,
-    currency::CurrencyType, network::Node, network::NodeType
+    CurrencyType, Node, NodeType
 };
 use chrono::Utc;
+use std::collections::HashMap;
 
 fn main() {
     // Initialize the ICN Node with all its components
@@ -33,20 +25,20 @@ fn main() {
     let mut network = Network::new();
 
     // Add initial members to the consensus mechanism
-    consensus.add_member("Alice".to_string());
-    consensus.add_member("Bob".to_string());
-    consensus.add_member("Charlie".to_string());
+    consensus.consensus.add_member("Alice".to_string());
+    consensus.consensus.add_member("Bob".to_string());
+    consensus.consensus.add_member("Charlie".to_string());
 
     // Create decentralized identities for participants
-    let (alice_did, _) = DecentralizedIdentity::new(std::collections::HashMap::new());
-    let (bob_did, _) = DecentralizedIdentity::new(std::collections::HashMap::new());
+    let (alice_did, _) = DecentralizedIdentity::new(HashMap::new());
+    let (bob_did, _) = DecentralizedIdentity::new(HashMap::new());
 
     // Add initial transactions to the blockchain
     let tx1 = Transaction::new(
         alice_did.id.clone(),
         bob_did.id.clone(),
         100.0,
-        CurrencyType::ICN,
+        CurrencyType::BasicNeeds,
         1000,
     );
     blockchain.add_transaction(tx1);
@@ -130,7 +122,7 @@ fn main() {
 
     // Print consensus state
     println!("Consensus state:");
-    println!("Number of members: {}", consensus.reputation_scores.len());
+    println!("Number of members: {}", consensus.consensus.members.len());
     println!("Current vote threshold: {}", consensus.vote_threshold);
 
     // Print democratic system state

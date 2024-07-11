@@ -12,7 +12,6 @@
 
 use serde::{Deserialize, Serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
-
 use crate::smart_contract::SmartContract;
 use crate::currency::CurrencyType;
 
@@ -23,13 +22,13 @@ use crate::currency::CurrencyType;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
-    pub from: String,                // Sender's address (public key or DID)
-    pub to: String,                  // Recipient's address
-    pub amount: f64,                 // Amount of currency being transferred
-    pub currency_type: CurrencyType, // Type of currency (e.g., BasicNeeds, Education)
-    pub gas_limit: u64,              // Maximum gas allowed for smart contract execution
+    pub from: String,                  // Sender's address (public key or DID)
+    pub to: String,                    // Recipient's address
+    pub amount: f64,                   // Amount of currency being transferred
+    pub currency_type: CurrencyType,   // Type of currency (e.g., BasicNeeds, Education)
+    pub gas_limit: u64,                // Maximum gas allowed for smart contract execution
     pub smart_contract: Option<SmartContract>, // Optional smart contract to execute
-    pub signature: Option<String>,   // Digital signature to verify authenticity
+    pub signature: Option<String>,     // Digital signature to verify authenticity
 }
 
 impl Transaction {

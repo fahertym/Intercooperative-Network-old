@@ -1,9 +1,7 @@
-// ===============================================
-// Main Library Module
-// ===============================================
-// This module re-exports the main components of the blockchain
-// from various submodules, providing a single entry point for
-// external code to interact with the blockchain.
+// src/lib.rs
+
+use std::sync::{Arc, Mutex};
+use std::error::Error;
 
 pub mod blockchain;
 pub mod consensus;
@@ -15,18 +13,16 @@ pub mod node;
 pub mod smart_contract;
 pub mod vm;
 
-pub use blockchain::blockchain::{Block, Transaction, Blockchain};
-pub use consensus::consensus::PoCConsensus;
-pub use currency::currency::{CurrencyType, CurrencySystem, Wallet};
-pub use governance::democracy::{DemocraticSystem, ProposalCategory, ProposalType};
-pub use identity::did::{DecentralizedIdentity, DidManager};
-pub use network::network::{Node, Network};
-pub use node::content_store::ContentStore;
-pub use node::fib::ForwardingInformationBase;
-pub use network::packet::{Packet, PacketType};
-pub use node::pending_interest_table::PendingInterestTable;
-pub use smart_contract::smart_contract::TransactionValidator;
-pub use vm::vm::{CoopVM, Opcode, Value, CSCLCompiler};
+pub use blockchain::{Block, Transaction, Blockchain};
+pub use consensus::PoCConsensus;
+pub use currency::{CurrencyType, CurrencySystem, Wallet};
+pub use governance::{DemocraticSystem, ProposalCategory, ProposalType};
+pub use identity::{DecentralizedIdentity, DidManager};
+pub use network::{Node, Network, Packet, PacketType};
+pub use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
+pub use smart_contract::{SmartContract, ExecutionEnvironment};
+pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
+
 
 
 /// The main struct representing an ICN Node.
@@ -43,7 +39,7 @@ impl IcnNode {
     /// Creates a new instance of the ICN Node.
     pub fn new() -> Self {
         let blockchain = Blockchain::new();
-        let coop_vm = CoopVM::new();
+        let coop_vm = CoopVM::new(Vec::new()); // Initialize with empty program
 
         IcnNode {
             content_store: Arc::new(Mutex::new(ContentStore::new())),
@@ -90,7 +86,7 @@ impl IcnNode {
     /// # Returns
     /// Result indicating success or failure.
     fn process_data(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
-        self.content_store.lock().unwrap().insert(packet.name.clone(), packet.content.clone());
+        self.content_store.lock().unwrap().add(packet.name.clone(), packet.content.clone());
 
         if let Some(_interfaces) = self.pit.lock().unwrap().get_incoming_interfaces(&packet.name) {
             println!("Satisfying pending interests for data: {}", packet.name);

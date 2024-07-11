@@ -1,9 +1,9 @@
-// ===============================================
-// Virtual Machine (VM) Module
-// ===============================================
-// This module manages the cooperative virtual machine operations,
-// including the compiler, VM core, and opcode definitions.
+// src/vm/mod.rs
 
-pub mod compiler;
-pub mod coop_vm;
+mod compiler;
 pub mod opcode;
+mod coop_vm;
+
+pub use compiler::CSCLCompiler;
+pub use opcode::Opcode;
+pub use coop_vm::{CoopVM, Value};

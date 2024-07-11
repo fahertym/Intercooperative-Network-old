@@ -1,13 +1,9 @@
-// ===============================================
-// Node Module
-// ===============================================
-// This module contains the components related to node operations,
-// including content storage, forwarding, and packet handling.
+// src/node/mod.rs
 
-pub mod icn_node;
 pub mod content_store;
 pub mod fib;
-pub mod node;
 pub mod pending_interest_table;
-pub mod packet;
 
+pub use content_store::ContentStore;
+pub use fib::ForwardingInformationBase;
+pub use pending_interest_table::PendingInterestTable;

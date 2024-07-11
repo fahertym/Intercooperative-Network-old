@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
+//use crate::vm::opcode::Opcode;
 
 // ===============================================
 // Smart Contract Struct and Enums

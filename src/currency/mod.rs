@@ -1,7 +1,4 @@
-// ===============================================
-// Currency Module
-// ===============================================
-// This module handles the currency operations within the network.
-// It includes currency types, systems, and wallet management.
+// Filename: src/currency/mod.rs
 
-pub mod currency;
+mod currency;
+pub use currency::{CurrencyType, Currency, CurrencySystem, Wallet};

@@ -12,12 +12,14 @@
 // ===============================================
 
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use rand::distributions::{Distribution, Uniform};
+use rand::thread_rng;
 
-use crate::blockchain::block::Block;
-use crate::blockchain::transaction::Transaction;
-use crate::smart_contract::{SmartContract, ExecutionEnvironment};
+use crate::blockchain::Block;
+use crate::blockchain::Transaction;
+use crate::smart_contract::SmartContract;
+use crate::smart_contract::ExecutionEnvironment;
 use crate::consensus::Consensus;
 
 // ===============================================
@@ -25,7 +27,7 @@ use crate::consensus::Consensus;
 // ===============================================
 // Represents the entire blockchain
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Blockchain {
     pub chain: Vec<Block>,
     pub pending_transactions: Vec<Transaction>,
@@ -53,7 +55,7 @@ impl Blockchain {
     }
 
     // Add a new block to the chain
-    pub fn create_block(&mut self, proposer: String) -> Result<(), String> {
+    pub fn create_block(&mut self, _proposer: String) -> Result<(), String> {
         let previous_block = self.chain.last().ok_or("No previous block found")?;
         let new_block = Block::new(self.chain.len() as u64, self.pending_transactions.clone(), previous_block.hash.clone());
         
@@ -92,7 +94,7 @@ impl Blockchain {
     }
 
     // Validate a transaction
-    pub fn validate_transaction(&self, transaction: &Transaction) -> Result<(), String> {
+    pub fn validate_transaction(&self, _transaction: &Transaction) -> Result<(), String> {
         // Check if the sender has sufficient balance
         // TODO: Implement balance checking logic
         
@@ -167,10 +169,29 @@ impl Blockchain {
         let transactions = block.transactions.clone();
         for transaction in transactions {
             if let Some(ref contract) = transaction.smart_contract {
-                let result = contract.execute(&mut self.execution_environment);
-                block.add_smart_contract_result(contract.id.clone(), result, transaction.gas_limit);
+                let result = contract.execute(&mut self.execution_environment)?;
+                // Assuming result is now a String, if not, you need to implement ToString for the result type
+                block.add_smart_contract_result(contract.id.clone(), result.to_string(), transaction.gas_limit);
             }
         }
         Ok(())
+    }
+
+    
+    // Select a proposer for the next block based on reputation
+    pub fn select_proposer(&self) -> Option<String> {
+        let total_reputation: f64 = self.consensus.members.values().map(|member| member.reputation).sum();
+        let mut rng = thread_rng();
+        let selection_point: f64 = Uniform::new(0.0, total_reputation).sample(&mut rng);
+        
+        let mut cumulative_reputation = 0.0;
+        for member in self.consensus.members.values() {
+            cumulative_reputation += member.reputation;
+            if cumulative_reputation >= selection_point {
+                return Some(member.id.clone());
+            }
+        }
+
+        None
     }
 }

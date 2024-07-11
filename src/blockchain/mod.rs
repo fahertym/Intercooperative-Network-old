@@ -1,10 +1,9 @@
-// ===============================================
-// Blockchain Module
-// ===============================================
-// This module includes the components related to blockchain operations,
-// such as blocks, transactions, and validators.
+// src/blockchain/mod.rs
 
-pub mod block;
-pub mod blockchain;
-pub mod transaction;
-pub mod transaction_validator;
+mod block;
+mod transaction;
+mod blockchain;
+
+pub use block::Block;
+pub use transaction::Transaction;
+pub use blockchain::Blockchain;

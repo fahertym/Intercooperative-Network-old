@@ -1,4 +1,4 @@
-// File: src/transaction_validator.rs
+// Filename: src/blockchain/transaction_validator.rs
 
 use crate::blockchain::{Transaction, Blockchain};
 

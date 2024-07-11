@@ -1,18 +1,45 @@
-// ===============================================
-// Block Structure
-// ===============================================
-// This file defines the structure of a Block in the blockchain.
-// It includes the necessary fields and methods for block manipulation.
-//
-// Key concepts:
-// - Merkle Tree: A data structure used for efficient verification of data integrity.
+// src/blockchain/block.rs
 
+use crate::blockchain::Transaction;
+use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
-    // Define the fields for the Block struct
     pub index: u64,
-    pub timestamp: u128,
+    pub timestamp: i64,
+    pub transactions: Vec<Transaction>,
     pub previous_hash: String,
     pub hash: String,
     pub nonce: u64,
-    // Other fields as necessary
+    pub gas_used: u64,
+    pub smart_contract_results: HashMap<String, String>,
+}
+
+impl Block {
+    pub fn new(index: u64, transactions: Vec<Transaction>, previous_hash: String) -> Self {
+        let timestamp = chrono::Utc::now().timestamp();
+        let mut block = Block {
+            index,
+            timestamp,
+            transactions,
+            previous_hash,
+            hash: String::new(),
+            nonce: 0,
+            gas_used: 0,
+            smart_contract_results: HashMap::new(),
+        };
+        block.hash = block.calculate_hash();
+        block
+    }
+
+    pub fn calculate_hash(&self) -> String {
+        // Implement hash calculation logic
+        "dummy_hash".to_string()
+    }
+
+    pub fn add_smart_contract_result(&mut self, contract_id: String, result: String, gas_used: u64) {
+        self.smart_contract_results.insert(contract_id, result);
+        self.gas_used += gas_used;
+    }
 }

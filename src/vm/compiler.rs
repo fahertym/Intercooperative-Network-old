@@ -1,4 +1,4 @@
-use crate::coop_vm::Opcode;
+use crate::vm::opcode::Opcode;
 
 #[derive(Debug, PartialEq, Clone)]
 enum Token {
