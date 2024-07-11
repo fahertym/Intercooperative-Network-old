@@ -1,3 +1,5 @@
+// Filename: main.rs
+
 mod blockchain;
 mod smart_contract;
 mod consensus;
@@ -10,36 +12,12 @@ mod cli;
 
 use crate::blockchain::Blockchain;
 use crate::smart_contract::parse_contract;
-use crate::consensus::PoCConsensus;
-use crate::currency::CurrencySystem;
-use crate::democracy::DemocraticSystem;
-use crate::did::DidManager;
-use crate::network::Network;
-use crate::transaction_validator::TransactionValidator;
 use crate::cli::run_cli;
 
 fn main() {
-    #[allow(unused_variables)]
-    let consensus = PoCConsensus::new(0.5, 0.66);
-
-    #[allow(unused_variables)]
-    let currency_system = CurrencySystem::new();
-
-    #[allow(unused_variables)]
-    let democratic_system = DemocraticSystem::new();
-
-    #[allow(unused_variables)]
-    let did_manager = DidManager::new();
-
-    #[allow(unused_variables)]
-    let network = Network::new();
-
-    #[allow(unused_variables)]
-    let transaction_validator = TransactionValidator;
-
     let mut blockchain = Blockchain::new();
 
-    // Add initial members
+    // Add initial members to the consensus
     blockchain.consensus.add_member("Alice".to_string());
     blockchain.consensus.add_member("Bob".to_string());
     blockchain.consensus.add_member("Charlie".to_string());

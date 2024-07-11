@@ -1,6 +1,13 @@
+// Filename: cli.rs
+
+// Importing necessary modules and crates
 use crate::blockchain::Blockchain;
 use crate::smart_contract::parse_contract;
 use std::io::{self, Write};
+
+// ================================================
+// CLI Functions
+// ================================================
 
 // Function to run the command-line interface
 pub fn run_cli(blockchain: &mut Blockchain) {

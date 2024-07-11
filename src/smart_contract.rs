@@ -1,7 +1,22 @@
-use serde::{Serialize, Deserialize};
+// Filename: smart_contract.rs
+
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
-use std::time::Duration;
+
+// ================================================
+// Enums and Structs for Smart Contracts
+// ================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmartContract {
+    pub id: String,
+    pub contract_type: ContractType,
+    pub creator: String,
+    pub created_at: DateTime<Utc>,
+    pub content: String,
+    pub status: ContractStatus,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ContractType {
@@ -15,16 +30,6 @@ pub enum ContractType {
     Custom(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SmartContract {
-    pub id: String,
-    pub contract_type: ContractType,
-    pub creator: String,
-    pub created_at: DateTime<Utc>,
-    pub content: String,
-    pub status: ContractStatus,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ContractStatus {
     Pending,
@@ -33,7 +38,12 @@ pub enum ContractStatus {
     Terminated,
 }
 
+// ================================================
+// Implementation of SmartContract
+// ================================================
+
 impl SmartContract {
+    // Constructor for creating a new SmartContract
     pub fn new(contract_type: ContractType, creator: String, content: String) -> Self {
         SmartContract {
             id: format!("contract_{}", Utc::now().timestamp()),
@@ -45,6 +55,7 @@ impl SmartContract {
         }
     }
 
+    // Methods to change the status of the contract
     pub fn activate(&mut self) {
         self.status = ContractStatus::Active;
     }
@@ -57,6 +68,7 @@ impl SmartContract {
         self.status = ContractStatus::Terminated;
     }
 
+    // Main execute function that dispatches to specific execution functions
     pub fn execute(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         if self.status != ContractStatus::Active {
             return Err(format!("Contract is not active. Current status: {:?}", self.status));
@@ -73,6 +85,10 @@ impl SmartContract {
             ContractType::Custom(ref name) => self.execute_custom_contract(env, name),
         }
     }
+
+    // ================================================
+    // Specific Execution Functions for Contract Types
+    // ================================================
 
     fn execute_asset_transfer(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: AssetTransferParams = serde_json::from_str(&self.content)
@@ -103,13 +119,8 @@ impl SmartContract {
     fn execute_proposal(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: ProposalParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse proposal params: {}", e))?;
-    
-        let voting_period = chrono::Duration::from_std(params.voting_period)
-            .map_err(|e| format!("Failed to convert voting period: {}", e))?;
-    
+
         env.proposals.insert(self.id.clone(), params);
-        // Use voting_period here if needed
-    
         Ok(())
     }
 
@@ -134,7 +145,10 @@ impl SmartContract {
     fn execute_resource_allocation(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: ResourceAllocationParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse resource allocation params: {}", e))?;
-    
+
+        // Add debug statement
+        println!("Parsed ResourceAllocationParams: {:?}", params);
+
         env.resource_allocations.insert(self.id.clone(), params);
         Ok(())
     }
@@ -150,17 +164,25 @@ impl SmartContract {
     fn execute_cooperative_membership(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: CooperativeMembershipParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse cooperative membership params: {}", e))?;
-    
+
+        // Add debug statement
+        println!("Parsed CooperativeMembershipParams: {:?}", params);
+
         env.memberships.insert(params.user_id.clone(), params);
         Ok(())
     }
-    
+
     fn execute_custom_contract(&self, env: &mut ExecutionEnvironment, name: &str) -> Result<(), String> {
         env.custom_contracts.insert(self.id.clone(), (name.to_string(), self.content.clone()));
         Ok(())
     }
 }
 
+// ================================================
+// Structs for Execution Environment and Params
+// ================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionEnvironment {
     pub balances: HashMap<String, HashMap<String, f64>>,
     pub proposals: HashMap<String, ProposalParams>,
@@ -172,6 +194,7 @@ pub struct ExecutionEnvironment {
     pub custom_contracts: HashMap<String, (String, String)>,
 }
 
+// Implementation for the Execution Environment
 impl ExecutionEnvironment {
     pub fn new() -> Self {
         ExecutionEnvironment {
@@ -210,6 +233,10 @@ impl ExecutionEnvironment {
     }
 }
 
+// ================================================
+// Structs for Specific Params
+// ================================================
+
 #[derive(Debug, Serialize, Deserialize)]
 struct AssetTransferParams {
     from: String,
@@ -218,12 +245,14 @@ struct AssetTransferParams {
     amount: f64,
 }
 
+// Making ProposalParams public to avoid visibility issues
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProposalParams {
     title: String,
     description: String,
     options: Vec<String>,
-    voting_period: Duration,
+    #[serde(with = "duration_serde")]
+    voting_period: std::time::Duration,
     quorum: f64,
 }
 
@@ -249,7 +278,8 @@ pub struct ResourceAllocationParams {
     resource: String,
     amount: f64,
     recipient: String,
-    duration: Duration,
+    #[serde(with = "duration_serde")]
+    duration: std::time::Duration,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -265,31 +295,43 @@ pub struct CooperativeMembershipParams {
     user_id: String,
     membership_type: String,
     join_date: DateTime<Utc>,
-    subscription_period: Duration,
+    #[serde(with = "duration_serde")]
+    subscription_period: std::time::Duration,
 }
+
+// ================================================
+// Utility Functions and Modules
+// ================================================
 
 pub fn parse_contract(input: &str) -> Result<SmartContract, String> {
-    let lines: Vec<&str> = input.lines().collect();
-    if lines.len() < 2 {
-        return Err("Invalid input format".to_string());
+    let contract: SmartContract = serde_json::from_str(input)
+        .map_err(|e| format!("Failed to parse contract: {}", e))?;
+    Ok(contract)
+}
+
+mod duration_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(duration.as_secs())
     }
 
-    let contract_type = match lines[0] {
-        "Asset Transfer" => ContractType::AssetTransfer,
-        "Proposal" => ContractType::Proposal,
-        "Service Agreement" => ContractType::ServiceAgreement,
-        "Governance Vote" => ContractType::GovernanceVote,
-        "Resource Allocation" => ContractType::ResourceAllocation,
-        "Identity Verification" => ContractType::IdentityVerification,
-        "Cooperative Membership" => ContractType::CooperativeMembership,
-        custom => ContractType::Custom(custom.to_string()),
-    };
-
-    let creator = lines[1].split(": ").nth(1).ok_or("Invalid creator format")?.to_string();
-    let content = lines[2..].join("\n");
-
-    Ok(SmartContract::new(contract_type, creator, content))
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let secs = u64::deserialize(deserializer)?;
+        Ok(Duration::from_secs(secs))
+    }
 }
+
+// ================================================
+// Unit Tests
+// ================================================
 
 #[cfg(test)]
 mod tests {
@@ -297,14 +339,14 @@ mod tests {
 
     #[test]
     fn test_parse_contract() {
-        let input = r#"Asset Transfer
-Creator: Alice
-{
-    "from": "Alice",
-    "to": "Bob",
-    "asset": "ICN_TOKEN",
-    "amount": 100.0
-}"#;
+        let input = r#"{
+            "id": "contract_123",
+            "contract_type": "AssetTransfer",
+            "creator": "Alice",
+            "created_at": "2023-07-01T00:00:00Z",
+            "content": "{\"from\": \"Alice\", \"to\": \"Bob\", \"asset\": \"ICN_TOKEN\", \"amount\": 100.0}",
+            "status": "Pending"
+        }"#;
 
         let contract = parse_contract(input).unwrap();
         assert!(matches!(contract.contract_type, ContractType::AssetTransfer));
@@ -454,48 +496,4 @@ Creator: Alice
         contract.terminate();
         assert_eq!(contract.status, ContractStatus::Terminated);
     }
-}
-
-// Additional helper functions
-
-pub fn validate_proposal(proposal: &ProposalParams) -> Result<(), String> {
-    if proposal.title.is_empty() {
-        return Err("Proposal title cannot be empty".to_string());
-    }
-    if proposal.options.len() < 2 {
-        return Err("Proposal must have at least two options".to_string());
-    }
-    if proposal.quorum < 0.0 || proposal.quorum > 1.0 {
-        return Err("Quorum must be between 0 and 1".to_string());
-    }
-    Ok(())
-}
-
-pub fn calculate_vote_result(votes: &[(String, bool)], quorum: f64, total_members: usize) -> Option<bool> {
-    let total_votes = votes.len();
-    if (total_votes as f64 / total_members as f64) < quorum {
-        return None; // Quorum not reached
-    }
-
-    let approve_votes = votes.iter().filter(|(_, vote)| *vote).count();
-    Some(approve_votes > total_votes / 2)
-}
-
-pub fn verify_identity(verification_data: &str, verification_method: &str) -> Result<bool, String> {
-    // This is a placeholder function. In a real-world scenario, this would involve
-    // complex verification processes, potentially interfacing with external systems.
-    match verification_method {
-        "Government ID" => Ok(verification_data.starts_with("Passport: ")),
-        "Biometric" => Ok(verification_data.contains("Fingerprint") || verification_data.contains("Facial Recognition")),
-        "Two-Factor" => Ok(verification_data.contains("SMS Code") || verification_data.contains("Authenticator App")),
-        _ => Err(format!("Unsupported verification method: {}", verification_method)),
-    }
-}
-
-pub fn calculate_resource_usage(allocations: &[ResourceAllocationParams]) -> HashMap<String, f64> {
-    let mut usage = HashMap::new();
-    for allocation in allocations.iter() {
-        *usage.entry(allocation.resource.clone()).or_insert(0.0) += allocation.amount;
-    }
-    usage
 }
