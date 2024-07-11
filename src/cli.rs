@@ -1,15 +1,21 @@
-// Filename: cli.rs
+// ===============================================
+// Command Line Interface (CLI) for ICN Node
+// ===============================================
+// This file defines the command line interface for interacting with the ICN Node.
+// It provides options for deploying and executing smart contracts, and viewing blockchain state.
+//
+// Key concepts:
+// - User Interaction: Allows users to interact with the ICN Node through a CLI.
+// - Smart Contract Management: Provides functionalities to deploy and execute smart contracts.
+// - Blockchain State Viewing: Allows users to view the current state of the blockchain.
 
-// Importing necessary modules and crates
 use crate::blockchain::Blockchain;
 use crate::smart_contract::parse_contract;
 use std::io::{self, Write};
 
-// ================================================
-// CLI Functions
-// ================================================
-
-// Function to run the command-line interface
+/// Runs the command-line interface for the ICN Node.
+/// # Arguments
+/// * `blockchain` - A mutable reference to the Blockchain instance.
 pub fn run_cli(blockchain: &mut Blockchain) {
     loop {
         print_menu();
@@ -25,7 +31,7 @@ pub fn run_cli(blockchain: &mut Blockchain) {
     }
 }
 
-// Function to print the menu
+/// Prints the menu options for the CLI.
 fn print_menu() {
     println!("\n--- Smart Contract CLI ---");
     println!("1. Deploy a new smart contract");
@@ -34,7 +40,11 @@ fn print_menu() {
     println!("4. Exit");
 }
 
-// Function to get user input
+/// Retrieves user input from the command line.
+/// # Arguments
+/// * `prompt` - A prompt message to display to the user.
+/// # Returns
+/// The user's input as a string.
 fn get_user_input(prompt: &str) -> String {
     print!("{}", prompt);
     io::stdout().flush().unwrap();
@@ -43,7 +53,9 @@ fn get_user_input(prompt: &str) -> String {
     input
 }
 
-// Function to deploy a smart contract
+/// Deploys a smart contract to the blockchain.
+/// # Arguments
+/// * `blockchain` - A mutable reference to the Blockchain instance.
 fn deploy_contract(blockchain: &mut Blockchain) {
     println!("Enter the smart contract details (type 'END' on a new line when finished):");
     let mut contract_input = String::new();
@@ -67,7 +79,9 @@ fn deploy_contract(blockchain: &mut Blockchain) {
     }
 }
 
-// Function to execute smart contracts
+/// Executes smart contracts on the blockchain.
+/// # Arguments
+/// * `blockchain` - A mutable reference to the Blockchain instance.
 fn execute_contracts(blockchain: &mut Blockchain) {
     match blockchain.execute_smart_contracts() {
         Ok(_) => println!("Smart contracts executed successfully!"),
@@ -75,7 +89,9 @@ fn execute_contracts(blockchain: &mut Blockchain) {
     }
 }
 
-// Function to view the blockchain state
+/// Views the current state of the blockchain.
+/// # Arguments
+/// * `blockchain` - A reference to the Blockchain instance.
 fn view_blockchain_state(blockchain: &Blockchain) {
     println!("Blockchain state:");
     println!("Number of blocks: {}", blockchain.chain.len());

@@ -1,7 +1,6 @@
-mod coop_vm;
-mod cscl_compiler;
-mod opcode;
+// Filename: src/vm/mod.rs
 
-pub use coop_vm::*;
-pub use cscl_compiler::*;
-pub use opcode::*;
+// Declare modules for the vm directory
+pub mod compiler;
+pub mod opcode;
+pub mod vm;

@@ -1,3 +1,4 @@
-mod consensus;
+// Filename: src/consensus/mod.rs
 
-pub use consensus::*;
+// Declare modules for the consensus directory
+pub mod consensus;

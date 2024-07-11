@@ -1,3 +1,4 @@
-mod democracy;
+// Filename: src/governance/mod.rs
 
-pub use democracy::*;
+// Declare modules for the governance directory
+pub mod governance;

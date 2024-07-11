@@ -1,6 +1,18 @@
+// ===============================================
+// Cooperative Virtual Machine (CoopVM) Implementation
+// ===============================================
+// This file defines the CoopVM structure and its functionalities. It includes methods
+// for executing compiled CSCL smart contract code.
+//
+// Key concepts:
+// - Opcode: Represents a single operation in the virtual machine.
+// - Value: Represents different types of values that can be manipulated by the virtual machine.
+// - Stack-Based Execution: The CoopVM uses a stack-based approach to execute operations.
+
 use std::collections::HashMap;
 use std::fmt;
 
+/// Represents different types of values that can be manipulated by the virtual machine.
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Value {
     Int(i64),
@@ -24,6 +36,7 @@ impl fmt::Display for Value {
     }
 }
 
+/// Represents different types of operations (opcodes) that the virtual machine can execute.
 #[derive(Debug, Clone)]
 pub enum Opcode {
     Push(Value),
@@ -60,6 +73,7 @@ pub enum Opcode {
     Emit(String),
 }
 
+/// The main struct representing the Cooperative Virtual Machine (CoopVM).
 pub struct CoopVM {
     stack: Vec<Value>,
     memory: HashMap<String, Value>,
@@ -70,6 +84,9 @@ pub struct CoopVM {
 }
 
 impl CoopVM {
+    /// Creates a new instance of the CoopVM.
+    /// # Arguments
+    /// * `program` - A vector of opcodes representing the program to be executed.
     pub fn new(program: Vec<Opcode>) -> Self {
         CoopVM {
             stack: Vec::new(),
@@ -81,6 +98,9 @@ impl CoopVM {
         }
     }
 
+    /// Runs the program loaded in the CoopVM.
+    /// # Returns
+    /// Result indicating success or failure.
     pub fn run(&mut self) -> Result<(), String> {
         while self.pc < self.program.len() {
             self.execute_instruction()?;
@@ -89,6 +109,9 @@ impl CoopVM {
         Ok(())
     }
 
+    /// Executes a single instruction in the program.
+    /// # Returns
+    /// Result indicating success or failure.
     fn execute_instruction(&mut self) -> Result<(), String> {
         let current_instruction = &self.program[self.pc].clone(); // Clone to avoid immutable borrow
         match current_instruction {
@@ -206,6 +229,11 @@ impl CoopVM {
         Ok(())
     }
 
+    /// Performs a binary operation (e.g., addition, subtraction) on two integers.
+    /// # Arguments
+    /// * `op` - The binary operation to be performed.
+    /// # Returns
+    /// Result indicating success or failure.
     fn binary_op<F>(&mut self, op: F) -> Result<(), String>
     where
         F: Fn(i64, i64) -> i64,
@@ -216,6 +244,11 @@ impl CoopVM {
         Ok(())
     }
 
+    /// Performs a comparison operation (e.g., equal, greater than) on two values.
+    /// # Arguments
+    /// * `op` - The comparison operation to be performed.
+    /// # Returns
+    /// Result indicating success or failure.
     fn compare_op<F>(&mut self, op: F) -> Result<(), String>
     where
         F: Fn(&Value, &Value) -> bool,
@@ -226,6 +259,11 @@ impl CoopVM {
         Ok(())
     }
 
+    /// Performs a logical operation (e.g., and, or) on two boolean values.
+    /// # Arguments
+    /// * `op` - The logical operation to be performed.
+    /// # Returns
+    /// Result indicating success or failure.
     fn logic_op<F>(&mut self, op: F) -> Result<(), String>
     where
         F: Fn(bool, bool) -> bool,
@@ -236,6 +274,9 @@ impl CoopVM {
         Ok(())
     }
 
+    /// Pops an integer from the stack.
+    /// # Returns
+    /// Result containing the integer or an error message.
     fn pop_int(&mut self) -> Result<i64, String> {
         match self.stack.pop().ok_or("Stack underflow")? {
             Value::Int(i) => Ok(i),
@@ -243,6 +284,9 @@ impl CoopVM {
         }
     }
 
+    /// Pops a boolean from the stack.
+    /// # Returns
+    /// Result containing the boolean or an error message.
     fn pop_bool(&mut self) -> Result<bool, String> {
         match self.stack.pop().ok_or("Stack underflow")? {
             Value::Bool(b) => Ok(b),
@@ -250,6 +294,9 @@ impl CoopVM {
         }
     }
 
+    /// Pops a string from the stack.
+    /// # Returns
+    /// Result containing the string or an error message.
     fn pop_string(&mut self) -> Result<String, String> {
         match self.stack.pop().ok_or("Stack underflow")? {
             Value::String(s) => Ok(s),
@@ -257,14 +304,24 @@ impl CoopVM {
         }
     }
 
+    /// Registers a function with its program counter position.
+    /// # Arguments
+    /// * `name` - The name of the function.
+    /// * `pc` - The program counter position of the function.
     pub fn register_function(&mut self, name: String, pc: usize) {
         self.functions.insert(name, pc);
     }
 
+    /// Retrieves the current state of the stack.
+    /// # Returns
+    /// A reference to the stack vector.
     pub fn get_stack(&self) -> &Vec<Value> {
         &self.stack
     }
 
+    /// Retrieves the current state of the memory.
+    /// # Returns
+    /// A reference to the memory hash map.
     pub fn get_memory(&self) -> &HashMap<String, Value> {
         &self.memory
     }

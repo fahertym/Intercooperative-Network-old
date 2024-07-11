@@ -1,3 +1,4 @@
-mod currency;
+// Filename: src/currency/mod.rs
 
-pub use currency::*;
+// Declare modules for the currency directory
+pub mod currency;

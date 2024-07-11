@@ -1,5 +1,3 @@
-// Filename: src/blockchain.rs
-
 // ===============================================
 // Blockchain Core Implementation
 // ===============================================
@@ -358,3 +356,7 @@ mod tests {
 // This concludes the implementation of our blockchain core. It provides
 // the fundamental structures and functions needed for a basic blockchain
 // system, including blocks, transactions, and smart contract integration.
+// Filename: src/blockchain/mod.rs
+
+// Declare modules for the blockchain directory
+pub mod blockchain;

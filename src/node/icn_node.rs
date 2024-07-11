@@ -1,17 +1,19 @@
 // ===============================================
-// ICN Node Library Module
+// ICN Node Implementation
 // ===============================================
-// This file defines the module structure for the ICN Node library. It imports and re-exports
-// all the necessary modules and structures for external use.
+// This file defines the ICN Node structure and its functionalities. It includes methods
+// for processing packets, managing the forwarding information base (FIB), pending interest table (PIT),
+// content store, and interacting with the blockchain and virtual machine (CoopVM).
 //
 // Key concepts:
-// - Module System: Organizing code into modules for better maintainability and readability.
-// - Re-exports: Making internal modules and structures available for external use.
+// - Forwarding Information Base (FIB): A table that stores routing information for named data.
+// - Pending Interest Table (PIT): A table that keeps track of interests that have been forwarded but not yet satisfied.
+// - Content Store: A cache for storing data packets temporarily.
+// - CoopVM: A virtual machine for executing compiled CSCL smart contract code.
 
 use std::sync::{Arc, Mutex};
 use std::error::Error;
 
-// Module declarations
 pub mod blockchain;
 pub mod consensus;
 pub mod currency;
@@ -21,10 +23,7 @@ pub mod network;
 pub mod node;
 pub mod smart_contract;
 pub mod vm;
-pub mod cli;
-pub mod compiler;
 
-// Re-exports
 pub use blockchain::{Block, Transaction, Blockchain};
 pub use consensus::PoCConsensus;
 pub use currency::{CurrencyType, CurrencySystem, Wallet};
@@ -34,8 +33,6 @@ pub use network::{Node, Network};
 pub use node::{ContentStore, ForwardingInformationBase, Packet, PacketType, PendingInterestTable};
 pub use smart_contract::TransactionValidator;
 pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
-pub use cli::run_cli;
-pub use compiler::{Lexer, Parser, CSCLCompiler};
 
 /// The main struct representing an ICN Node.
 /// It contains the content store, PIT, FIB, blockchain, and CoopVM.
@@ -127,47 +124,5 @@ impl IcnNode {
     fn compile_contract(&self, contract: &str) -> Result<Vec<Opcode>, Box<dyn Error>> {
         let mut compiler = CSCLCompiler::new(contract);
         Ok(compiler.compile())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_icn_node_creation() {
-        let node = IcnNode::new();
-        assert!(node.content_store.lock().unwrap().is_empty());
-        assert!(node.pit.lock().unwrap().is_empty());
-        assert!(node.fib.lock().unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_packet_processing() {
-        let node = IcnNode::new();
-
-        let interest_packet = Packet {
-            packet_type: PacketType::Interest,
-            name: "test_data".to_string(),
-            content: vec![],
-        };
-
-        assert!(node.process_packet(interest_packet.clone()).is_err());
-
-        let data_packet = Packet {
-            packet_type: PacketType::Data,
-            name: "test_data".to_string(),
-            content: vec![1, 2, 3],
-        };
-
-        assert!(node.process_packet(data_packet).is_ok());
-
-        let interest_packet = Packet {
-            packet_type: PacketType::Interest,
-            name: "test_data".to_string(),
-            content: vec![],
-        };
-
-        assert!(node.process_packet(interest_packet).is_ok());
     }
 }

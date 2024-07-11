@@ -1,59 +1,31 @@
-Blockchain-Based Democracy System
-Description
+# ICN Node
 
-This project implements a blockchain-based system designed to support a decentralized democracy and multi-currency financial system. The system integrates various modules to handle transactions, networking, consensus, and democratic processes, emphasizing community involvement and secure, transparent operations.
-Key Components
+## Overview
 
-    Blockchain: Core functionalities of blockchain operations, including handling transactions.
-    Currency: Management of multiple types of digital currencies, each serving different social functions.
-    Network: Handles the networking aspect, ensuring robust and secure communication between nodes.
-    Transaction Validator: Validates transactions to prevent issues like double spending.
-    Democracy: Incorporates democratic processes within the blockchain, potentially for decision-making or governance.
-    Consensus: Manages the consensus algorithm essential for blockchain integrity.
+The ICN Node is a Rust-based implementation of a cooperative blockchain system. It includes features such as smart contracts, decentralized governance, and various modules for managing network operations.
 
-Getting Started
-Dependencies
+## Features
 
-    Rust Programming Language
-    Cargo (Rust's package manager and build system)
-    Any additional dependencies will be listed in the Cargo.toml file.
+- **Smart Contracts**: Self-executing contracts with the terms of the agreement directly written into code.
+- **Decentralized Governance**: Mechanisms for democratic decision-making within the cooperative.
+- **Currency Management**: Support for multiple currencies representing different economic needs.
+- **Identity Verification**: Decentralized identity management and verification.
+- **Resource Allocation**: Allocation and management of resources within the network.
+- **Network Operations**: Packet handling, interest forwarding, and content storage.
 
-Installing
+## Installation
 
-Clone the repository to your local machine:
+1. Ensure you have Rust installed. If not, install it from [rust-lang.org](https://www.rust-lang.org/).
+2. Clone the repository:
+   ```sh
+   git clone <repository-url>
+   cd cooperative-blockchain
 
-bash
+## Build the project:
+    cargo build
 
-git clone https://github.com/fahertym/cooperative-blockchain.git
-
-Navigate to the project directory:
-
-bash
-
-cd projectname
-
-Build the project using Cargo:
-
-bash
-
-cargo build
-
-Executing program
-
-Run the project using Cargo:
-
-bash
-
+## To run the ICN Node:
 cargo run
 
-Testing
 
-To run the tests included in the project:
 
-bash
-
-cargo test
-
-Help
-
-If you encounter any problems, please check the GitHub issues or create a new one.

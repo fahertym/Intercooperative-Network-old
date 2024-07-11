@@ -1,3 +1,4 @@
-mod did;
+// Filename: src/identity/mod.rs
 
-pub use did::*;
+// Declare modules for the identity directory
+pub mod identity;

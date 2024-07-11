@@ -1,3 +1,4 @@
-mod smart_contract;
+// Filename: src/smart_contract/mod.rs
 
-pub use smart_contract::*;
+// Declare modules for the smart_contract directory
+pub mod smart_contract;

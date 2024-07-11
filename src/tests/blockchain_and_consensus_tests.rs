@@ -1,7 +1,12 @@
+// Filename: src/tests/blockchain_and_consensus_tests.rs
+
+use crate::blockchain::{Blockchain, Transaction};
+use crate::currency::CurrencyType;
+use crate::consensus::Consensus;
+
 #[cfg(test)]
 mod tests {
-    use crate::blockchain::{Blockchain, Transaction};
-    use crate::consensus::CurrencyType;
+    use super::*;
 
     #[test]
     fn test_blockchain_creation() {
@@ -15,12 +20,12 @@ mod tests {
         let mut blockchain = Blockchain::new();
         blockchain.consensus.add_member("Alice".to_string());
         let transactions = vec![
-            Transaction::new("Alice".to_string(), "Bob".to_string(), 100.0, CurrencyType::BasicNeeds),
-            Transaction::new("Bob".to_string(), "Charlie".to_string(), 50.0, CurrencyType::Education),
+            Transaction::new("Alice".to_string(), "Bob".to_string(), 100.0, CurrencyType::BasicNeeds, 1000),
+            Transaction::new("Bob".to_string(), "Charlie".to_string(), 50.0, CurrencyType::Education, 1000),
         ];
-        let result = blockchain.create_block(transactions);
+        let result = blockchain.create_block("Alice".to_string());
         assert!(result.is_ok(), "Block creation failed: {:?}", result.err());
-        assert_eq!(blockchain.pending_blocks.len(), 1, "One pending block should be created");
+        assert_eq!(blockchain.chain.len(), 2, "Blockchain should have two blocks after creation");
     }
 
     #[test]
@@ -40,9 +45,9 @@ mod tests {
         blockchain.consensus.add_member("Charlie".to_string());
         
         let transactions = vec![
-            Transaction::new("Alice".to_string(), "Bob".to_string(), 100.0, CurrencyType::BasicNeeds),
+            Transaction::new("Alice".to_string(), "Bob".to_string(), 100.0, CurrencyType::BasicNeeds, 1000),
         ];
-        blockchain.create_block(transactions).expect("Block creation should succeed");
+        blockchain.create_block("Alice".to_string()).expect("Block creation should succeed");
         
         assert!(blockchain.vote_on_block("Alice", 1, true).is_ok(), "Alice should be able to vote");
         assert!(blockchain.vote_on_block("Bob", 1, true).is_ok(), "Bob should be able to vote");

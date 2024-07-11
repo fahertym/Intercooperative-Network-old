@@ -1,3 +1,14 @@
+// ===============================================
+// Main File for ICN Node Initialization and Execution
+// ===============================================
+// This file is the entry point for the ICN Node application. It initializes the node,
+// sets up the blockchain and related systems, and executes example operations.
+//
+// Key concepts:
+// - Node Initialization: Setting up the ICN Node with all necessary components.
+// - Blockchain Interaction: Adding transactions, creating blocks, and deploying smart contracts.
+// - CSCL Compiler: Compiling and executing CSCL code for smart contracts.
+
 use icn_node::{
     IcnNode, CSCLCompiler, Blockchain, Transaction, PoCConsensus, DemocraticSystem,
     ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, Opcode, Value,
@@ -6,31 +17,31 @@ use icn_node::{
 use chrono::Utc;
 
 fn main() {
-    // Initialize the ICN Node
+    // Initialize the ICN Node with all its components
     let mut node = IcnNode::new();
 
-    // Set up the blockchain
+    // Initialize the blockchain
     let mut blockchain = Blockchain::new();
 
-    // Set up the consensus mechanism
+    // Set up the Proof of Contribution consensus mechanism
     let mut consensus = PoCConsensus::new(0.5, 0.66);
 
-    // Set up the democratic system
+    // Set up the democratic system for governance
     let mut democratic_system = DemocraticSystem::new();
 
-    // Set up the network
+    // Initialize the network
     let mut network = Network::new();
 
-    // Add some initial members
+    // Add initial members to the consensus mechanism
     consensus.add_member("Alice".to_string());
     consensus.add_member("Bob".to_string());
     consensus.add_member("Charlie".to_string());
 
-    // Create some decentralized identities
+    // Create decentralized identities for participants
     let (alice_did, _) = DecentralizedIdentity::new(std::collections::HashMap::new());
     let (bob_did, _) = DecentralizedIdentity::new(std::collections::HashMap::new());
 
-    // Add some initial transactions
+    // Add initial transactions to the blockchain
     let tx1 = Transaction::new(
         alice_did.id.clone(),
         bob_did.id.clone(),
@@ -40,10 +51,10 @@ fn main() {
     );
     blockchain.add_transaction(tx1);
 
-    // Create a block
+    // Create a block containing the initial transactions
     blockchain.create_block("Alice".to_string()).unwrap();
 
-    // Create a proposal
+    // Create a proposal for the democratic system
     let proposal_id = democratic_system.create_proposal(
         "Community Garden".to_string(),
         "Create a community garden in the local park".to_string(),
@@ -55,11 +66,11 @@ fn main() {
         Some(Utc::now() + chrono::Duration::days(30)), // Execute in 30 days if passed
     );
 
-    // Vote on the proposal
+    // Participants vote on the proposal
     democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0).unwrap();
     democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0).unwrap();
 
-    // Tally votes
+    // Tally votes for the proposal
     democratic_system.tally_votes(&proposal_id).unwrap();
 
     // Example usage of CSCL compiler
@@ -85,14 +96,13 @@ fn main() {
 
     println!("Compiled CSCL code into {} opcodes", opcodes.len());
 
-    // Print all opcodes
+    // Print all compiled opcodes
     for (i, opcode) in opcodes.iter().enumerate() {
         println!("Opcode {}: {:?}", i, opcode);
     }
 
     // Create a CoopVM instance and execute the compiled code
-    let mut coop_vm = CoopVM::new();
-    coop_vm.load_program(opcodes);
+    let mut coop_vm = CoopVM::new(opcodes);
     match coop_vm.run() {
         Ok(_) => println!("CoopVM execution completed successfully"),
         Err(e) => println!("CoopVM execution failed: {}", e),

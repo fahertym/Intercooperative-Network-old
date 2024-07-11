@@ -1,6 +1,7 @@
-// tests/icn_node_tests.rs
+// Filename: src/tests/icn_node_tests.rs
 
-use icn_node::{IcnNode, Packet, PacketType};
+// Import necessary modules and types
+use crate::icn_node::{IcnNode, Packet, PacketType};
 use std::net::SocketAddr;
 
 #[test]
