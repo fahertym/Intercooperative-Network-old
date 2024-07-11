@@ -1,33 +1,38 @@
-// File: src/consensus.rs
+// consensus.rs
 
+// This module implements the Proof-of-Contribution (PoC) consensus mechanism.
+// It handles node management, reputation scores, voting, and block validation.
+
+// We use several standard library collections and time management features.
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use rand::Rng;
 
-type ReputationScores = HashMap<String, f64>;
-
+// This struct represents a vote within the consensus mechanism.
 #[derive(Clone, Debug)]
 pub struct Vote {
-    pub voter: String,
-    pub in_favor: bool,
-    pub weight: f64,
+    pub voter: String,    // The ID of the voter node
+    pub in_favor: bool,   // Whether the vote is in favor or not
+    pub weight: f64,      // The weight of the vote based on reputation
 }
 
+// The main PoCConsensus struct handles the state of the consensus mechanism.
 #[derive(Clone, Default)]
 pub struct PoCConsensus {
-    reputation_scores: ReputationScores,
-    min_reputation_threshold: f64,
-    max_reputation: f64,
-    votes: HashMap<u64, Vec<Vote>>,
-    vote_threshold: f64,
-    last_decay: u64,
-    decay_period: u64,
-    decay_factor: f64,
-    rehabilitation_rate: f64,
-    slashing_severity: HashMap<String, f64>,
+    pub reputation_scores: HashMap<String, f64>, // Stores the reputation scores of nodes
+    pub min_reputation_threshold: f64,           // Minimum reputation required to participate
+    pub max_reputation: f64,                     // Maximum possible reputation
+    pub votes: HashMap<u64, Vec<Vote>>,          // Records votes for each block
+    pub vote_threshold: f64,                     // Threshold for a block to be considered valid
+    pub last_decay: u64,                         // Timestamp of the last reputation decay
+    pub decay_period: u64,                       // How often reputations should decay
+    pub decay_factor: f64,                       // Factor by which reputations decay
+    pub rehabilitation_rate: f64,                // Rate at which low reputations are rehabilitated
+    pub slashing_severity: HashMap<String, f64>, // Severity of reputation slashing for offenses
 }
 
 impl PoCConsensus {
+    // Create a new PoCConsensus instance with initial parameters.
     pub fn new(min_reputation_threshold: f64, vote_threshold: f64) -> Self {
         Self {
             reputation_scores: HashMap::new(),
@@ -36,60 +41,67 @@ impl PoCConsensus {
             votes: HashMap::new(),
             vote_threshold,
             last_decay: 0,
-            decay_period: 86400,
+            decay_period: 86400, // Default to 1 day (86400 seconds)
             decay_factor: 0.95,
             rehabilitation_rate: 0.1,
             slashing_severity: HashMap::new(),
         }
     }
 
+    // Set the vote threshold, ensuring it's between 0 and 1.
     pub fn set_vote_threshold(&mut self, new_threshold: f64) {
         self.vote_threshold = new_threshold.max(0.0).min(1.0);
     }
 
-    pub fn add_member(&mut self, member_id: String) {
-        self.reputation_scores.insert(member_id, self.min_reputation_threshold - 0.1);
+    // Add a new node to the consensus mechanism.
+    pub fn add_node(&mut self, node_id: String) {
+        self.reputation_scores.insert(node_id, self.min_reputation_threshold - 0.1);
     }
 
-    pub fn is_eligible(&self, member_id: &str) -> bool {
-        self.get_reputation(member_id).unwrap_or(0.0) >= self.min_reputation_threshold
+    // Check if a node is eligible to participate based on their reputation.
+    pub fn is_eligible(&self, node_id: &str) -> bool {
+        self.get_reputation(node_id).unwrap_or(0.0) >= self.min_reputation_threshold
     }
 
-    pub fn update_reputation(&mut self, member_id: &str, delta: f64) {
-        let old_reputation = self.reputation_scores.get(member_id).cloned().unwrap_or(0.0);
+    // Update a node's reputation based on their contribution.
+    pub fn update_reputation(&mut self, node_id: &str, delta: f64) {
+        let old_reputation = self.reputation_scores.get(node_id).cloned().unwrap_or(0.0);
         let new_reputation = (old_reputation + delta).max(0.0).min(self.max_reputation);
-        self.reputation_scores.insert(member_id.to_string(), new_reputation);
+        self.reputation_scores.insert(node_id.to_string(), new_reputation);
     }
 
-    pub fn get_reputation(&self, member_id: &str) -> Option<f64> {
-        self.reputation_scores.get(member_id).cloned()
+    // Get the reputation of a specific node.
+    pub fn get_reputation(&self, node_id: &str) -> Option<f64> {
+        self.reputation_scores.get(node_id).cloned()
     }
 
+    // Select a proposer for the next block based on reputation scores.
     pub fn select_proposer(&self) -> Option<String> {
-        let eligible_members: Vec<_> = self.reputation_scores
+        let eligible_nodes: Vec<_> = self.reputation_scores
             .iter()
             .filter(|(_, &score)| score >= self.min_reputation_threshold)
             .collect();
 
-        if eligible_members.is_empty() {
+        if eligible_nodes.is_empty() {
             return None;
         }
 
-        let total_reputation: f64 = eligible_members.iter().map(|(_, &score)| score).sum();
+        let total_reputation: f64 = eligible_nodes.iter().map(|(_, &score)| score).sum();
         let mut rng = rand::thread_rng();
-        let selection_point: f64 = rng.gen_range(0.0, total_reputation);
+        let selection_point: f64 = rng.gen_range(0.0..total_reputation);
 
         let mut cumulative_reputation = 0.0;
-        for (member, &score) in eligible_members.into_iter().rev() {
+        for (node, &score) in eligible_nodes {
             cumulative_reputation += score;
             if selection_point <= cumulative_reputation {
-                return Some(member.clone());
+                return Some(node.clone());
             }
         }
 
         None
     }
 
+    // Submit a vote for a specific block.
     pub fn submit_vote(&mut self, block_index: u64, voter: String, in_favor: bool) {
         if self.is_eligible(&voter) {
             let weight = self.get_reputation(&voter).unwrap_or(0.0);
@@ -97,6 +109,7 @@ impl PoCConsensus {
         }
     }
 
+    // Check if a block is valid based on the votes it received.
     pub fn is_block_valid(&self, block_index: u64) -> bool {
         if let Some(votes) = self.votes.get(&block_index) {
             let total_weight: f64 = votes.iter().map(|v| v.weight).sum();
@@ -115,6 +128,7 @@ impl PoCConsensus {
         }
     }
 
+    // Finalize a block and update reputations based on votes.
     pub fn finalize_block(&mut self, block_index: u64) {
         if let Some(votes) = self.votes.get(&block_index) {
             let voters_to_reward: Vec<String> = votes.iter().map(|v| v.voter.clone()).collect();
@@ -125,11 +139,13 @@ impl PoCConsensus {
         self.votes.remove(&block_index);
     }
 
-    pub fn slash_reputation(&mut self, member_id: &str, offense: &str) {
+    // Slash the reputation of a node for an offense.
+    pub fn slash_reputation(&mut self, node_id: &str, offense: &str) {
         let slash_amount = self.slashing_severity.get(offense).cloned().unwrap_or(0.1);
-        self.update_reputation(member_id, -slash_amount);
+        self.update_reputation(node_id, -slash_amount);
     }
 
+    // Decay reputations periodically.
     pub fn decay_reputations(&mut self) {
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         if now - self.last_decay >= self.decay_period {
@@ -140,7 +156,8 @@ impl PoCConsensus {
         }
     }
 
-    pub fn rehabilitate_members(&mut self) {
+    // Rehabilitate nodes with low reputations gradually.
+    pub fn rehabilitate_nodes(&mut self) {
         for (_, score) in self.reputation_scores.iter_mut() {
             if *score < self.min_reputation_threshold {
                 *score += self.rehabilitation_rate;
@@ -149,22 +166,24 @@ impl PoCConsensus {
         }
     }
 
-    pub fn challenge_slashing(&mut self, member_id: &str, challenge_votes: usize) -> bool {
-        let current_reputation = self.get_reputation(member_id).unwrap_or(0.0);
+    // Challenge a reputation slashing event.
+    pub fn challenge_slashing(&mut self, node_id: &str, challenge_votes: usize) -> bool {
+        let current_reputation = self.get_reputation(node_id).unwrap_or(0.0);
         let challenge_success_threshold = self.reputation_scores.len() / 2;
 
         if challenge_votes > challenge_success_threshold {
             let reputation_restore = self.max_reputation / 2.0;
-            self.update_reputation(member_id, reputation_restore);
-            println!("Slashing challenge successful for {}. Reputation restored by {}", member_id, reputation_restore);
+            self.update_reputation(node_id, reputation_restore);
+            println!("Slashing challenge successful for {}. Reputation restored by {}", node_id, reputation_restore);
             true
         } else {
-            println!("Slashing challenge failed for {}. Reputation remains at {}", member_id, current_reputation);
+            println!("Slashing challenge failed for {}. Reputation remains at {}", node_id, current_reputation);
             false
         }
     }
 }
 
+// Unit tests for PoCConsensus functionality.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,9 +192,9 @@ mod tests {
     fn test_poc_consensus() {
         let mut consensus = PoCConsensus::new(0.5, 0.66);
         
-        consensus.add_member("Alice".to_string());
-        consensus.add_member("Bob".to_string());
-        consensus.add_member("Charlie".to_string());
+        consensus.add_node("Alice".to_string());
+        consensus.add_node("Bob".to_string());
+        consensus.add_node("Charlie".to_string());
 
         assert_eq!(consensus.get_reputation("Alice"), Some(0.4));
         assert_eq!(consensus.get_reputation("Bob"), Some(0.4));
@@ -204,7 +223,7 @@ mod tests {
         assert!(consensus.get_reputation("Alice").unwrap() < 0.6);
 
         consensus.decay_reputations();
-        consensus.rehabilitate_members();
+        consensus.rehabilitate_nodes();
 
         assert!(consensus.challenge_slashing("Alice", 2));
     }

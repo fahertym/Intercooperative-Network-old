@@ -1,20 +1,27 @@
 // File: src/did.rs
 
+// ==================================================
+// Imports
+// ==================================================
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Verifier};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ==================================================
+// Enums and Structs for Decentralized Identity
+// ==================================================
+
 // Struct to represent a decentralized identity
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DecentralizedIdentity {
-    pub id: String,
+    pub id: String,                      // Unique identifier for the DID
     #[serde(with = "public_key_serde")]
-    pub public_key: PublicKey,
-    pub created_at: DateTime<Utc>,
-    pub reputation: f64,
-    pub attributes: HashMap<String, String>,
+    pub public_key: PublicKey,           // Public key for the DID
+    pub created_at: DateTime<Utc>,       // Timestamp of creation
+    pub reputation: f64,                 // Reputation score (0 to 100)
+    pub attributes: HashMap<String, String>, // Additional attributes
 }
 
 // Module for (de)serialization of the public key
@@ -39,15 +46,18 @@ mod public_key_serde {
     }
 }
 
+// Implementation of DecentralizedIdentity
 impl DecentralizedIdentity {
     // Function to create a new decentralized identity
     pub fn new(attributes: HashMap<String, String>) -> (Self, Keypair) {
         let mut csprng = OsRng {};
-        let keypair: Keypair = Keypair::generate(&mut csprng);
+        let keypair: Keypair = Keypair::generate(&mut csprng); // Generate a key pair
         let public_key = keypair.public;
 
+        // Generate a unique ID based on the public key
         let id = format!("did:icn:{}", hex::encode(public_key.to_bytes()));
 
+        // Return the new identity and the key pair
         (
             Self {
                 id,
@@ -66,12 +76,18 @@ impl DecentralizedIdentity {
     }
 }
 
+// ==================================================
+// Struct to Manage Decentralized Identities
+// ==================================================
+
 // Struct to manage decentralized identities
 pub struct DidManager {
-    identities: HashMap<String, DecentralizedIdentity>,
+    identities: HashMap<String, DecentralizedIdentity>, // Map of DIDs to their identities
 }
 
+// Implementation of DidManager
 impl DidManager {
+    // Constructor to create a new DidManager
     pub fn new() -> Self {
         Self {
             identities: HashMap::new(),
@@ -87,6 +103,7 @@ impl DidManager {
         Ok(())
     }
 
+    // Function to get a decentralized identity by ID
     pub fn get_did(&self, id: &str) -> Option<&DecentralizedIdentity> {
         self.identities.get(id)
     }
@@ -130,6 +147,9 @@ impl DidManager {
     }
 }
 
+// ==================================================
+// Unit Tests for Decentralized Identity
+// ==================================================
 #[cfg(test)]
 mod tests {
     use super::*;

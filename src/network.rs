@@ -1,5 +1,3 @@
-// File: src/network.rs
-
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 

@@ -1,5 +1,3 @@
-// src/cscl_compiler.rs
-
 use crate::coop_vm::Opcode;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -405,14 +403,9 @@ pub struct CSCLCompiler {
     parser: Parser,
 }
 
-pub struct CSCLCompiler {
-    lexer: Lexer,
-    parser: Parser,
-}
-
 impl CSCLCompiler {
     pub fn new(input: &str) -> Self {
-        let lexer = Lexer::new(input);
+        let mut lexer = Lexer::new(input);
         let tokens = lexer.tokens();
         let parser = Parser::new(tokens);
         CSCLCompiler { lexer, parser }

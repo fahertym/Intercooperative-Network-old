@@ -1,8 +1,5 @@
-// src/coop_vm.rs
-
 use std::collections::HashMap;
 use std::fmt;
-use std::cmp::Ordering;
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Value {
@@ -93,7 +90,8 @@ impl CoopVM {
     }
 
     fn execute_instruction(&mut self) -> Result<(), String> {
-        match &self.program[self.pc] {
+        let current_instruction = &self.program[self.pc].clone(); // Clone to avoid immutable borrow
+        match current_instruction {
             Opcode::Push(value) => self.stack.push(value.clone()),
             Opcode::Pop => {
                 self.stack.pop().ok_or("Stack underflow")?;

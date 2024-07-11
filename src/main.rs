@@ -1,11 +1,8 @@
-// src/main.rs
-
 use icn_node::{
-    IcnNode, CSCLCompiler, Blockchain, Transaction, CurrencyType, PoCConsensus,
-    DemocraticSystem, ProposalCategory, ProposalType, DecentralizedIdentity, Network,
-    CoopVM, Opcode, Value
+    IcnNode, CSCLCompiler, Blockchain, Transaction, PoCConsensus, DemocraticSystem,
+    ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, Opcode, Value,
+    currency::CurrencyType, network::Node, network::NodeType
 };
-use std::time::Duration;
 use chrono::Utc;
 
 fn main() {
@@ -38,7 +35,7 @@ fn main() {
         alice_did.id.clone(),
         bob_did.id.clone(),
         100.0,
-        CurrencyType::BasicNeeds,
+        CurrencyType::ICN,
         1000,
     );
     blockchain.add_transaction(tx1);
@@ -51,9 +48,9 @@ fn main() {
         "Community Garden".to_string(),
         "Create a community garden in the local park".to_string(),
         "Alice".to_string(),
-        Duration::from_secs(7 * 24 * 60 * 60), // 1 week voting period
+        chrono::Duration::weeks(1), // 1 week voting period
         ProposalType::Constitutional,
-        ProposalCategory::Community,
+        ProposalCategory::Economic,
         0.51, // 51% quorum
         Some(Utc::now() + chrono::Duration::days(30)), // Execute in 30 days if passed
     );
@@ -84,7 +81,7 @@ fn main() {
     "#;
 
     let mut compiler = CSCLCompiler::new(cscl_code);
-    let opcodes = compiler.compile();
+    let opcodes = compiler.compile().expect("Compilation failed");
 
     println!("Compiled CSCL code into {} opcodes", opcodes.len());
 
@@ -94,7 +91,8 @@ fn main() {
     }
 
     // Create a CoopVM instance and execute the compiled code
-    let mut coop_vm = CoopVM::new(opcodes);
+    let mut coop_vm = CoopVM::new();
+    coop_vm.load_program(opcodes);
     match coop_vm.run() {
         Ok(_) => println!("CoopVM execution completed successfully"),
         Err(e) => println!("CoopVM execution failed: {}", e),
@@ -106,9 +104,10 @@ fn main() {
     println!("Memory: {:?}", coop_vm.get_memory());
 
     // Simulate some network activity
-    let node1 = network.add_node("Node1".to_string(), "127.0.0.1:8000".to_string());
-    let node2 = network.add_node("Node2".to_string(), "127.0.0.1:8001".to_string());
-    network.connect(node1, node2);
+    let node1 = Node::new("Node1", NodeType::PersonalDevice, "127.0.0.1:8000");
+    let node2 = Node::new("Node2", NodeType::PersonalDevice, "127.0.0.1:8001");
+    network.add_node(node1.clone());
+    network.add_node(node2.clone());
 
     // Broadcast the latest block
     let latest_block = blockchain.get_latest_block().unwrap();
@@ -121,12 +120,12 @@ fn main() {
 
     // Print consensus state
     println!("Consensus state:");
-    println!("Number of members: {}", consensus.get_member_count());
-    println!("Current vote threshold: {}", consensus.get_vote_threshold());
+    println!("Number of members: {}", consensus.reputation_scores.len());
+    println!("Current vote threshold: {}", consensus.vote_threshold);
 
     // Print democratic system state
     println!("Democratic system state:");
-    println!("Number of active proposals: {}", democratic_system.get_active_proposal_count());
+    println!("Number of active proposals: {}", democratic_system.list_active_proposals().len());
     
     println!("ICN Node simulation completed.");
 }

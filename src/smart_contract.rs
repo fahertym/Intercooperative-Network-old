@@ -1,74 +1,91 @@
 // Filename: smart_contract.rs
 
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
+// =================================================
+// Overview
+// =================================================
+// This file defines the SmartContract struct and its associated functionality.
+// Smart contracts are self-executing contracts with the terms of the agreement
+// directly written into code. This file also defines the ExecutionEnvironment struct,
+// which provides the context and state for executing smart contracts.
 
-// ================================================
+// =================================================
+// Imports
+// =================================================
+
+use std::collections::HashMap; // HashMap is used to store balances, proposals, votes, and other contract-related data.
+use serde::{Serialize, Deserialize}; // Serde is used for serializing and deserializing contract data.
+use chrono::{DateTime, Utc}; // Chrono is used for handling date and time.
+
+// =================================================
 // Enums and Structs for Smart Contracts
-// ================================================
+// =================================================
 
+// Define the SmartContract struct which represents a smart contract.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartContract {
-    pub id: String,
-    pub contract_type: ContractType,
-    pub creator: String,
-    pub created_at: DateTime<Utc>,
-    pub content: String,
-    pub status: ContractStatus,
+    pub id: String, // Unique identifier for the contract.
+    pub contract_type: ContractType, // The type of the contract (e.g., AssetTransfer, Proposal).
+    pub creator: String, // The creator of the contract.
+    pub created_at: DateTime<Utc>, // The creation timestamp of the contract.
+    pub content: String, // The content of the contract in JSON format.
+    pub status: ContractStatus, // The current status of the contract (e.g., Pending, Active).
 }
 
+// Define the ContractType enum which represents different types of contracts.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ContractType {
-    AssetTransfer,
-    Proposal,
-    ServiceAgreement,
-    GovernanceVote,
-    ResourceAllocation,
-    IdentityVerification,
-    CooperativeMembership,
-    Custom(String),
+    AssetTransfer, // Contract for transferring assets.
+    Proposal, // Contract for making proposals.
+    ServiceAgreement, // Contract for service agreements.
+    GovernanceVote, // Contract for governance voting.
+    ResourceAllocation, // Contract for allocating resources.
+    IdentityVerification, // Contract for identity verification.
+    CooperativeMembership, // Contract for cooperative membership.
+    Custom(String), // Custom contract with a specific name.
 }
 
+// Define the ContractStatus enum which represents the status of the contract.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ContractStatus {
-    Pending,
-    Active,
-    Completed,
-    Terminated,
+    Pending, // Contract is pending and not yet active.
+    Active, // Contract is active and can be executed.
+    Completed, // Contract has been completed.
+    Terminated, // Contract has been terminated.
 }
 
-// ================================================
+// =================================================
 // Implementation of SmartContract
-// ================================================
+// =================================================
 
 impl SmartContract {
-    // Constructor for creating a new SmartContract
+    // Constructor for creating a new SmartContract.
     pub fn new(contract_type: ContractType, creator: String, content: String) -> Self {
         SmartContract {
-            id: format!("contract_{}", Utc::now().timestamp()),
-            contract_type,
-            creator,
-            created_at: Utc::now(),
-            content,
-            status: ContractStatus::Pending,
+            id: format!("contract_{}", Utc::now().timestamp()), // Generate a unique ID using the current timestamp.
+            contract_type, // Set the contract type.
+            creator, // Set the creator of the contract.
+            created_at: Utc::now(), // Set the creation timestamp.
+            content, // Set the content of the contract.
+            status: ContractStatus::Pending, // Initialize the status as Pending.
         }
     }
 
-    // Methods to change the status of the contract
+    // Method to activate the contract.
     pub fn activate(&mut self) {
         self.status = ContractStatus::Active;
     }
 
+    // Method to complete the contract.
     pub fn complete(&mut self) {
         self.status = ContractStatus::Completed;
     }
 
+    // Method to terminate the contract.
     pub fn terminate(&mut self) {
         self.status = ContractStatus::Terminated;
     }
 
-    // Main execute function that dispatches to specific execution functions
+    // Main execute function that dispatches to specific execution functions based on the contract type.
     pub fn execute(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         if self.status != ContractStatus::Active {
             return Err(format!("Contract is not active. Current status: {:?}", self.status));
@@ -90,6 +107,7 @@ impl SmartContract {
     // Specific Execution Functions for Contract Types
     // ================================================
 
+    // Execute an asset transfer contract.
     fn execute_asset_transfer(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: AssetTransferParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse asset transfer params: {}", e))?;
@@ -116,6 +134,7 @@ impl SmartContract {
         }
     }
 
+    // Execute a proposal contract.
     fn execute_proposal(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: ProposalParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse proposal params: {}", e))?;
@@ -124,6 +143,7 @@ impl SmartContract {
         Ok(())
     }
 
+    // Execute a service agreement contract.
     fn execute_service_agreement(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: ServiceAgreementParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse service agreement params: {}", e))?;
@@ -132,6 +152,7 @@ impl SmartContract {
         Ok(())
     }
 
+    // Execute a governance vote contract.
     fn execute_governance_vote(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: GovernanceVoteParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse governance vote params: {}", e))?;
@@ -142,17 +163,16 @@ impl SmartContract {
         Ok(())
     }
 
+    // Execute a resource allocation contract.
     fn execute_resource_allocation(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: ResourceAllocationParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse resource allocation params: {}", e))?;
-
-        // Add debug statement
-        println!("Parsed ResourceAllocationParams: {:?}", params);
 
         env.resource_allocations.insert(self.id.clone(), params);
         Ok(())
     }
 
+    // Execute an identity verification contract.
     fn execute_identity_verification(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: IdentityVerificationParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse identity verification params: {}", e))?;
@@ -161,41 +181,42 @@ impl SmartContract {
         Ok(())
     }
 
+    // Execute a cooperative membership contract.
     fn execute_cooperative_membership(&self, env: &mut ExecutionEnvironment) -> Result<(), String> {
         let params: CooperativeMembershipParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse cooperative membership params: {}", e))?;
-
-        // Add debug statement
-        println!("Parsed CooperativeMembershipParams: {:?}", params);
 
         env.memberships.insert(params.user_id.clone(), params);
         Ok(())
     }
 
+    // Execute a custom contract.
     fn execute_custom_contract(&self, env: &mut ExecutionEnvironment, name: &str) -> Result<(), String> {
         env.custom_contracts.insert(self.id.clone(), (name.to_string(), self.content.clone()));
         Ok(())
     }
 }
 
-// ================================================
+// =================================================
 // Structs for Execution Environment and Params
-// ================================================
+// =================================================
 
+// Define the ExecutionEnvironment struct which represents the context and state for executing smart contracts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionEnvironment {
-    pub balances: HashMap<String, HashMap<String, f64>>,
-    pub proposals: HashMap<String, ProposalParams>,
-    pub votes: HashMap<String, Vec<(String, bool)>>,
-    pub service_agreements: HashMap<String, ServiceAgreementParams>,
-    pub resource_allocations: HashMap<String, ResourceAllocationParams>,
-    pub identities: HashMap<String, IdentityVerificationParams>,
-    pub memberships: HashMap<String, CooperativeMembershipParams>,
-    pub custom_contracts: HashMap<String, (String, String)>,
+    pub balances: HashMap<String, HashMap<String, f64>>, // Balances of different users.
+    pub proposals: HashMap<String, ProposalParams>, // Proposals in the environment.
+    pub votes: HashMap<String, Vec<(String, bool)>>, // Votes for different proposals.
+    pub service_agreements: HashMap<String, ServiceAgreementParams>, // Service agreements.
+    pub resource_allocations: HashMap<String, ResourceAllocationParams>, // Resource allocations.
+    pub identities: HashMap<String, IdentityVerificationParams>, // Identity verifications.
+    pub memberships: HashMap<String, CooperativeMembershipParams>, // Cooperative memberships.
+    pub custom_contracts: HashMap<String, (String, String)>, // Custom contracts.
 }
 
-// Implementation for the Execution Environment
+// Implementation for the ExecutionEnvironment.
 impl ExecutionEnvironment {
+    // Constructor for creating a new ExecutionEnvironment.
     pub fn new() -> Self {
         ExecutionEnvironment {
             balances: HashMap::new(),
@@ -209,6 +230,7 @@ impl ExecutionEnvironment {
         }
     }
 
+    // Add balance to a user's account.
     pub fn add_balance(&mut self, user: &str, asset: &str, amount: f64) {
         self.balances
             .entry(user.to_string())
@@ -218,6 +240,7 @@ impl ExecutionEnvironment {
             .or_insert(amount);
     }
 
+    // Get the balance of a user's account.
     pub fn get_balance(&self, user: &str, asset: &str) -> f64 {
         self.balances
             .get(user)
@@ -226,6 +249,7 @@ impl ExecutionEnvironment {
             .unwrap_or(0.0)
     }
 
+    // Tally the votes for a given proposal.
     pub fn tally_votes(&self, proposal_id: &str) -> (usize, usize) {
         let votes = self.votes.get(proposal_id).cloned().unwrap_or_default();
         let (approve, reject): (Vec<_>, Vec<_>) = votes.into_iter().partition(|(_, vote)| *vote);
@@ -233,86 +257,95 @@ impl ExecutionEnvironment {
     }
 }
 
-// ================================================
+// =================================================
 // Structs for Specific Params
-// ================================================
+// =================================================
 
+// Define the parameters for asset transfer contracts.
 #[derive(Debug, Serialize, Deserialize)]
 struct AssetTransferParams {
-    from: String,
-    to: String,
-    asset: String,
-    amount: f64,
+    from: String, // Sender's account.
+    to: String, // Receiver's account.
+    asset: String, // The asset being transferred.
+    amount: f64, // The amount of the asset being transferred.
 }
 
-// Making ProposalParams public to avoid visibility issues
+// Define the parameters for proposal contracts.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProposalParams {
-    title: String,
-    description: String,
-    options: Vec<String>,
+    title: String, // The title of the proposal.
+    description: String, // The description of the proposal.
+    options: Vec<String>, // The options available in the proposal.
     #[serde(with = "duration_serde")]
-    voting_period: std::time::Duration,
-    quorum: f64,
+    voting_period: std::time::Duration, // The duration of the voting period.
+    quorum: f64, // The quorum required for the proposal to pass.
 }
 
+// Define the parameters for governance vote contracts.
 #[derive(Debug, Serialize, Deserialize)]
 struct GovernanceVoteParams {
-    proposal_id: String,
-    voter: String,
-    vote: bool,
+    proposal_id: String, // The ID of the proposal being voted on.
+    voter: String, // The voter.
+    vote: bool, // The vote (true for approve, false for reject).
 }
 
+// Define the parameters for service agreement contracts.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ServiceAgreementParams {
-    provider: String,
-    consumer: String,
-    service: String,
-    terms: String,
-    start_date: DateTime<Utc>,
-    end_date: DateTime<Utc>,
+    provider: String, // The service provider.
+    consumer: String, // The service consumer.
+    service: String, // The service being provided.
+    terms: String, // The terms of the service agreement.
+    start_date: DateTime<Utc>, // The start date of the service agreement.
+    end_date: DateTime<Utc>, // The end date of the service agreement.
 }
 
+// Define the parameters for resource allocation contracts.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ResourceAllocationParams {
-    resource: String,
-    amount: f64,
-    recipient: String,
+    resource: String, // The resource being allocated.
+    amount: f64, // The amount of the resource being allocated.
+    recipient: String, // The recipient of the resource.
     #[serde(with = "duration_serde")]
-    duration: std::time::Duration,
+    duration: std::time::Duration, // The duration for which the resource is allocated.
 }
 
+// Define the parameters for identity verification contracts.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IdentityVerificationParams {
-    user_id: String,
-    verification_data: String,
-    verification_method: String,
-    expiration: DateTime<Utc>,
+    user_id: String, // The ID of the user being verified.
+    verification_data: String, // The data used for verification.
+    verification_method: String, // The method of verification.
+    expiration: DateTime<Utc>, // The expiration date of the verification.
 }
 
+// Define the parameters for cooperative membership contracts.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CooperativeMembershipParams {
-    user_id: String,
-    membership_type: String,
-    join_date: DateTime<Utc>,
+    user_id: String, // The ID of the user becoming a member.
+    membership_type: String, // The type of membership.
+    join_date: DateTime<Utc>, // The join date.
     #[serde(with = "duration_serde")]
-    subscription_period: std::time::Duration,
+    subscription_period: std::time::Duration, // The subscription period.
 }
 
-// ================================================
+// =================================================
 // Utility Functions and Modules
-// ================================================
+// =================================================
 
+// Function to parse a smart contract from a JSON string.
 pub fn parse_contract(input: &str) -> Result<SmartContract, String> {
     let contract: SmartContract = serde_json::from_str(input)
         .map_err(|e| format!("Failed to parse contract: {}", e))?;
     Ok(contract)
 }
 
+// Module for handling serialization and deserialization of durations.
 mod duration_serde {
     use serde::{Deserialize, Deserializer, Serializer};
     use std::time::Duration;
 
+    // Serialize a duration to seconds.
     pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -320,6 +353,7 @@ mod duration_serde {
         serializer.serialize_u64(duration.as_secs())
     }
 
+    // Deserialize a duration from seconds.
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
     where
         D: Deserializer<'de>,
@@ -329,9 +363,9 @@ mod duration_serde {
     }
 }
 
-// ================================================
+// =================================================
 // Unit Tests
-// ================================================
+// =================================================
 
 #[cfg(test)]
 mod tests {
