@@ -1,4 +1,7 @@
-// Filename: src/consensus/mod.rs
+// ===============================================
+// Consensus Module
+// ===============================================
+// This module contains the consensus mechanisms used in the network.
+// It includes the implementation of Proof of Cooperative Stake (PoCoS).
 
-// Declare modules for the consensus directory
-pub mod consensus;
+pub mod poc_consensus;

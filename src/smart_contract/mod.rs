@@ -1,4 +1,7 @@
-// Filename: src/smart_contract/mod.rs
+// ===============================================
+// Smart Contract Module
+// ===============================================
+// This module handles the operations related to smart contracts,
+// including their validation and execution.
 
-// Declare modules for the smart_contract directory
 pub mod smart_contract;

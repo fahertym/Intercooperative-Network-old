@@ -1,4 +1,4 @@
-// Filename: src/currency.rs
+// Filename: src/currency/currency.rs
 
 // ===============================================
 // Currency System Implementation
@@ -104,6 +104,7 @@ impl Currency {
 // This struct manages all currencies in our system, providing methods
 // for creating, retrieving, and managing multiple currencies.
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CurrencySystem {
     pub currencies: HashMap<CurrencyType, Currency>, // Stores all currencies in the system
 }
@@ -182,6 +183,7 @@ impl CurrencySystem {
 // ===============================================
 // This struct represents a user's wallet, capable of holding multiple currencies
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Wallet {
     balances: HashMap<CurrencyType, f64>, // Stores the balance for each currency type
 }

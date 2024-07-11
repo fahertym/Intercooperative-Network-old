@@ -1,4 +1,7 @@
-// Filename: src/identity/mod.rs
+// ===============================================
+// Decentralized Identity (DID) Module
+// ===============================================
+// This module handles the identity management in the network.
+// It includes structures and functions for decentralized identifiers.
 
-// Declare modules for the identity directory
-pub mod identity;
+pub mod did;

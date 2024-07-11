@@ -1,17 +1,10 @@
 // ===============================================
-// ICN Node Library Module
+// Main Library Module
 // ===============================================
-// This file defines the module structure for the ICN Node library. It imports and re-exports
-// all the necessary modules and structures for external use.
-//
-// Key concepts:
-// - Module System: Organizing code into modules for better maintainability and readability.
-// - Re-exports: Making internal modules and structures available for external use.
+// This module re-exports the main components of the blockchain
+// from various submodules, providing a single entry point for
+// external code to interact with the blockchain.
 
-use std::sync::{Arc, Mutex};
-use std::error::Error;
-
-// Module declarations
 pub mod blockchain;
 pub mod consensus;
 pub mod currency;
@@ -21,21 +14,20 @@ pub mod network;
 pub mod node;
 pub mod smart_contract;
 pub mod vm;
-pub mod cli;
-pub mod compiler;
 
-// Re-exports
-pub use blockchain::{Block, Transaction, Blockchain};
-pub use consensus::PoCConsensus;
-pub use currency::{CurrencyType, CurrencySystem, Wallet};
-pub use governance::{DemocraticSystem, ProposalCategory, ProposalType};
-pub use identity::{DecentralizedIdentity, DidManager};
-pub use network::{Node, Network};
-pub use node::{ContentStore, ForwardingInformationBase, Packet, PacketType, PendingInterestTable};
-pub use smart_contract::TransactionValidator;
-pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
-pub use cli::run_cli;
-pub use compiler::{Lexer, Parser, CSCLCompiler};
+pub use blockchain::blockchain::{Block, Transaction, Blockchain};
+pub use consensus::consensus::PoCConsensus;
+pub use currency::currency::{CurrencyType, CurrencySystem, Wallet};
+pub use governance::democracy::{DemocraticSystem, ProposalCategory, ProposalType};
+pub use identity::did::{DecentralizedIdentity, DidManager};
+pub use network::network::{Node, Network};
+pub use node::content_store::ContentStore;
+pub use node::fib::ForwardingInformationBase;
+pub use network::packet::{Packet, PacketType};
+pub use node::pending_interest_table::PendingInterestTable;
+pub use smart_contract::smart_contract::TransactionValidator;
+pub use vm::vm::{CoopVM, Opcode, Value, CSCLCompiler};
+
 
 /// The main struct representing an ICN Node.
 /// It contains the content store, PIT, FIB, blockchain, and CoopVM.

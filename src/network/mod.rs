@@ -1,13 +1,16 @@
-// Filename: src/network/mod.rs
+// ===============================================
+// Network Module
+// ===============================================
+// This module re-exports the contents of the network submodules.
+// The network submodules handle the packet structures and network
+// communication for the blockchain.
 
-// Declare modules for the network directory
-pub mod network;
 pub mod data_packet;
 pub mod interest_packet;
+pub mod network;
 pub mod packet;
 
-// Re-export the modules
-pub use network::*;
 pub use data_packet::*;
 pub use interest_packet::*;
+pub use network::*;
 pub use packet::*;

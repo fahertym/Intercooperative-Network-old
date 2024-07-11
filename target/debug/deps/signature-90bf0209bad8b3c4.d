@@ -1,0 +1,11 @@
+/home/matt/cooperative-blockchain/target/debug/deps/libsignature-90bf0209bad8b3c4.rmeta: /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/lib.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/error.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/keypair.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/signature.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/signer.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/verifier.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/../README.md
+
+/home/matt/cooperative-blockchain/target/debug/deps/signature-90bf0209bad8b3c4.d: /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/lib.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/error.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/keypair.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/signature.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/signer.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/verifier.rs /home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/../README.md
+
+/home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/lib.rs:
+/home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/error.rs:
+/home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/keypair.rs:
+/home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/signature.rs:
+/home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/signer.rs:
+/home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/verifier.rs:
+/home/matt/.cargo/registry/src/index.crates.io-6f17d22bba15001f/signature-1.6.4/src/../README.md:

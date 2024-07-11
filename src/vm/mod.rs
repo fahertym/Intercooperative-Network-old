@@ -1,6 +1,9 @@
-// Filename: src/vm/mod.rs
+// ===============================================
+// Virtual Machine (VM) Module
+// ===============================================
+// This module manages the cooperative virtual machine operations,
+// including the compiler, VM core, and opcode definitions.
 
-// Declare modules for the vm directory
 pub mod compiler;
+pub mod coop_vm;
 pub mod opcode;
-pub mod vm;

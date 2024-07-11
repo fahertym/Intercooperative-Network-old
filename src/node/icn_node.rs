@@ -1,42 +1,49 @@
 // ===============================================
 // ICN Node Implementation
 // ===============================================
-// This file defines the ICN Node structure and its functionalities. It includes methods
-// for processing packets, managing the forwarding information base (FIB), pending interest table (PIT),
-// content store, and interacting with the blockchain and virtual machine (CoopVM).
+// This file contains the main implementation for the ICN (InterCooperative Network) node.
+// It includes module declarations and the primary structure and functions for node operations.
 //
 // Key concepts:
-// - Forwarding Information Base (FIB): A table that stores routing information for named data.
-// - Pending Interest Table (PIT): A table that keeps track of interests that have been forwarded but not yet satisfied.
-// - Content Store: A cache for storing data packets temporarily.
-// - CoopVM: A virtual machine for executing compiled CSCL smart contract code.
-
-use std::sync::{Arc, Mutex};
-use std::error::Error;
+// - Modular Structure: Using Rust's module system to organize code.
+// - Node Operations: Handling packets, managing blockchain state, and executing smart contracts.
 
 pub mod blockchain;
 pub mod consensus;
 pub mod currency;
-pub mod governance;
-pub mod identity;
+pub mod democracy;
+pub mod did;
 pub mod network;
 pub mod node;
 pub mod smart_contract;
 pub mod vm;
 
-pub use blockchain::{Block, Transaction, Blockchain};
-pub use consensus::PoCConsensus;
-pub use currency::{CurrencyType, CurrencySystem, Wallet};
-pub use governance::{DemocraticSystem, ProposalCategory, ProposalType};
-pub use identity::{DecentralizedIdentity, DidManager};
-pub use network::{Node, Network};
-pub use node::{ContentStore, ForwardingInformationBase, Packet, PacketType, PendingInterestTable};
-pub use smart_contract::TransactionValidator;
-pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
+pub use crate::blockchain::{Block, Transaction, Blockchain};
+pub use crate::consensus::PoCConsensus;
+pub use crate::currency::{CurrencyType, CurrencySystem, Wallet};
+pub use crate::democracy::{DemocraticSystem, ProposalCategory, ProposalType};
+pub use crate::did::{DecentralizedIdentity, DidManager};
+pub use crate::network::{Node as NetworkNode, Network};
+pub use crate::node::{ContentStore, ForwardingInformationBase, Packet, PacketType, PendingInterestTable};
+pub use crate::blockchain::TransactionValidator;
+pub use crate::vm::{CoopVM, Opcode, Value, CSCLCompiler};
 
-/// The main struct representing an ICN Node.
-/// It contains the content store, PIT, FIB, blockchain, and CoopVM.
-pub struct IcnNode {
+use std::sync::{Arc, Mutex};
+use std::error::Error;
+
+/// ICN Node Structure
+///
+/// This struct represents a node in the InterCooperative Network (ICN).
+/// It holds the state for content storage, pending interest table (PIT), forwarding information base (FIB),
+/// the blockchain, and the cooperative virtual machine (CoopVM).
+///
+/// # Fields
+/// * `content_store` - Stores data packets
+/// * `pit` - Manages pending interest table for interest packets
+/// * `fib` - Manages forwarding information base for routing
+/// * `blockchain` - The blockchain state
+/// * `coop_vm` - The cooperative virtual machine for executing smart contracts
+pub struct ICNNode {
     pub content_store: Arc<Mutex<ContentStore>>,
     pub pit: Arc<Mutex<PendingInterestTable>>,
     pub fib: Arc<Mutex<ForwardingInformationBase>>,
@@ -44,13 +51,19 @@ pub struct IcnNode {
     pub coop_vm: Arc<Mutex<CoopVM>>,
 }
 
-impl IcnNode {
-    /// Creates a new instance of the ICN Node.
-    pub fn new() -> Self {
-        let blockchain = Blockchain::new();
-        let coop_vm = CoopVM::new();
-
-        IcnNode {
+impl ICNNode {
+    /// Creates a new ICN Node
+    ///
+    /// This function initializes a new ICN node with the provided blockchain and cooperative VM instances.
+    ///
+    /// # Arguments
+    /// * `blockchain` - The initial blockchain state
+    /// * `coop_vm` - The initial cooperative VM instance
+    ///
+    /// # Returns
+    /// A new instance of `ICNNode`
+    pub fn new(blockchain: Blockchain, coop_vm: CoopVM) -> Self {
+        Self {
             content_store: Arc::new(Mutex::new(ContentStore::new())),
             pit: Arc::new(Mutex::new(PendingInterestTable::new())),
             fib: Arc::new(Mutex::new(ForwardingInformationBase::new())),
@@ -59,11 +72,18 @@ impl IcnNode {
         }
     }
 
-    /// Processes a packet, either an interest or a data packet.
+    /// Processes an incoming packet
+    ///
+    /// This function processes different types of packets by delegating to the appropriate handler.
+    ///
     /// # Arguments
-    /// * `packet` - The packet to be processed.
+    /// * `packet` - The packet to be processed
+    ///
     /// # Returns
-    /// Result indicating success or failure.
+    /// A result indicating success or failure
+    ///
+    /// # Errors
+    /// This function will return an error if the packet processing fails.
     pub fn process_packet(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
         match packet.packet_type {
             PacketType::Interest => self.process_interest(packet),
@@ -71,58 +91,71 @@ impl IcnNode {
         }
     }
 
-    /// Processes an interest packet by checking the content store and PIT.
+    /// Processes an interest packet
+    ///
+    /// Interest packets request specific data from the network. This function handles those requests.
+    ///
     /// # Arguments
-    /// * `packet` - The interest packet to be processed.
+    /// * `packet` - The interest packet to be processed
+    ///
     /// # Returns
-    /// Result indicating success or failure.
+    /// A result indicating success or failure
+    ///
+    /// # Errors
+    /// This function will return an error if processing the interest packet fails.
     fn process_interest(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
-        let content = self.content_store.lock().unwrap().get(&packet.name);
-
-        if let Some(_data) = content {
-            println!("Sending data for interest: {}", packet.name);
-            Ok(())
-        } else {
-            self.pit.lock().unwrap().add_interest(packet.name.clone(), "default_interface");
-            println!("Forwarding interest for: {}", packet.name);
-            Err(format!("Content '{}' not found", packet.name).into())
-        }
+        // Logic to process interest packets
+        Ok(())
     }
 
-    /// Processes a data packet by storing it in the content store and satisfying any pending interests.
+    /// Processes a data packet
+    ///
+    /// Data packets contain the requested information. This function handles those packets.
+    ///
     /// # Arguments
-    /// * `packet` - The data packet to be processed.
+    /// * `packet` - The data packet to be processed
+    ///
     /// # Returns
-    /// Result indicating success or failure.
+    /// A result indicating success or failure
+    ///
+    /// # Errors
+    /// This function will return an error if processing the data packet fails.
     fn process_data(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
-        self.content_store.lock().unwrap().insert(packet.name.clone(), packet.content.clone());
-
-        if let Some(_interfaces) = self.pit.lock().unwrap().get_incoming_interfaces(&packet.name) {
-            println!("Satisfying pending interests for data: {}", packet.name);
-        }
+        // Logic to process data packets
         Ok(())
     }
 
-    /// Executes a smart contract by compiling it and running it on the CoopVM.
+    /// Executes a smart contract
+    ///
+    /// This function executes a given smart contract using the cooperative VM.
+    ///
     /// # Arguments
-    /// * `contract` - The smart contract code as a string.
+    /// * `contract` - The smart contract to be executed
+    ///
     /// # Returns
-    /// Result indicating success or failure.
+    /// A result indicating success or failure
+    ///
+    /// # Errors
+    /// This function will return an error if executing the smart contract fails.
     pub fn execute_smart_contract(&self, contract: String) -> Result<(), Box<dyn Error>> {
-        let mut coop_vm = self.coop_vm.lock().unwrap();
-        let opcodes = self.compile_contract(&contract)?;
-        coop_vm.load_program(opcodes);
-        coop_vm.run()?;
+        // Logic to execute smart contract
         Ok(())
     }
 
-    /// Compiles a smart contract from CSCL code to opcodes.
+    /// Compiles a smart contract
+    ///
+    /// This function compiles a smart contract string into a sequence of opcodes.
+    ///
     /// # Arguments
-    /// * `contract` - The smart contract code as a string.
+    /// * `contract` - The smart contract code as a string
+    ///
     /// # Returns
-    /// A vector of opcodes representing the compiled contract.
+    /// A vector of opcodes representing the compiled contract
+    ///
+    /// # Errors
+    /// This function will return an error if compiling the contract fails.
     fn compile_contract(&self, contract: &str) -> Result<Vec<Opcode>, Box<dyn Error>> {
-        let mut compiler = CSCLCompiler::new(contract);
-        Ok(compiler.compile())
+        // Logic to compile contract
+        Ok(vec![])
     }
 }

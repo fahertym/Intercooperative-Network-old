@@ -1,8 +1,13 @@
-// Filename: src/node/mod.rs
+// ===============================================
+// Node Module
+// ===============================================
+// This module contains the components related to node operations,
+// including content storage, forwarding, and packet handling.
 
-// Declare modules for the node directory
+pub mod icn_node;
 pub mod content_store;
 pub mod fib;
-pub mod icn_node;
 pub mod node;
 pub mod pending_interest_table;
+pub mod packet;
+
