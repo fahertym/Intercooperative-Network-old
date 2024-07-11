@@ -1,111 +1,132 @@
-// Filename: main.rs
+// src/main.rs
 
-mod blockchain;
-mod smart_contract;
-mod consensus;
-mod currency;
-mod democracy;
-mod did;
-mod network;
-mod transaction_validator;
-mod cli;
-
-use crate::blockchain::Blockchain;
-use crate::smart_contract::parse_contract;
-use crate::cli::run_cli;
+use icn_node::{
+    IcnNode, CSCLCompiler, Blockchain, Transaction, CurrencyType, PoCConsensus,
+    DemocraticSystem, ProposalCategory, ProposalType, DecentralizedIdentity, Network,
+    CoopVM, Opcode, Value
+};
+use std::time::Duration;
+use chrono::Utc;
 
 fn main() {
+    // Initialize the ICN Node
+    let mut node = IcnNode::new();
+
+    // Set up the blockchain
     let mut blockchain = Blockchain::new();
 
-    // Add initial members to the consensus
-    blockchain.consensus.add_member("Alice".to_string());
-    blockchain.consensus.add_member("Bob".to_string());
-    blockchain.consensus.add_member("Charlie".to_string());
-    blockchain.consensus.add_member("Dave".to_string());
+    // Set up the consensus mechanism
+    let mut consensus = PoCConsensus::new(0.5, 0.66);
 
-    // Initialize member balances
-    blockchain.execution_environment.balances.insert(
+    // Set up the democratic system
+    let mut democratic_system = DemocraticSystem::new();
+
+    // Set up the network
+    let mut network = Network::new();
+
+    // Add some initial members
+    consensus.add_member("Alice".to_string());
+    consensus.add_member("Bob".to_string());
+    consensus.add_member("Charlie".to_string());
+
+    // Create some decentralized identities
+    let (alice_did, _) = DecentralizedIdentity::new(std::collections::HashMap::new());
+    let (bob_did, _) = DecentralizedIdentity::new(std::collections::HashMap::new());
+
+    // Add some initial transactions
+    let tx1 = Transaction::new(
+        alice_did.id.clone(),
+        bob_did.id.clone(),
+        100.0,
+        CurrencyType::BasicNeeds,
+        1000,
+    );
+    blockchain.add_transaction(tx1);
+
+    // Create a block
+    blockchain.create_block("Alice".to_string()).unwrap();
+
+    // Create a proposal
+    let proposal_id = democratic_system.create_proposal(
+        "Community Garden".to_string(),
+        "Create a community garden in the local park".to_string(),
         "Alice".to_string(),
-        [("ICN_TOKEN".to_string(), 1000.0)].iter().cloned().collect(),
-    );
-    blockchain.execution_environment.balances.insert(
-        "Bob".to_string(),
-        [("ICN_TOKEN".to_string(), 1000.0)].iter().cloned().collect(),
-    );
-    blockchain.execution_environment.balances.insert(
-        "Charlie".to_string(),
-        [("ICN_TOKEN".to_string(), 1000.0)].iter().cloned().collect(),
-    );
-    blockchain.execution_environment.balances.insert(
-        "Dave".to_string(),
-        [("ICN_TOKEN".to_string(), 1000.0)].iter().cloned().collect(),
+        Duration::from_secs(7 * 24 * 60 * 60), // 1 week voting period
+        ProposalType::Constitutional,
+        ProposalCategory::Community,
+        0.51, // 51% quorum
+        Some(Utc::now() + chrono::Duration::days(30)), // Execute in 30 days if passed
     );
 
-    // Example: Deploy an asset transfer smart contract
-    let contract_input = r#"Asset Transfer
-Creator: Alice
-{
-    "from": "Alice",
-    "to": "Bob",
-    "asset": "ICN_TOKEN",
-    "amount": 100.0
-}"#;
+    // Vote on the proposal
+    democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0).unwrap();
+    democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0).unwrap();
 
-    match parse_contract(contract_input) {
-        Ok(mut contract) => {
-            contract.activate(); // Activate the contract before deployment
-            if let Err(e) = blockchain.deploy_smart_contract(contract) {
-                println!("Failed to deploy asset transfer contract: {}", e);
-            } else {
-                println!("Asset transfer contract deployed successfully!");
-            }
+    // Tally votes
+    democratic_system.tally_votes(&proposal_id).unwrap();
+
+    // Example usage of CSCL compiler
+    let cscl_code = r#"
+        function calculate_reward(contribution) {
+            return contribution * 2;
         }
-        Err(e) => println!("Failed to parse asset transfer contract: {}", e),
+
+        initial_contribution = 100;
+        reward = calculate_reward(initial_contribution);
+        emit("RewardCalculated", reward);
+
+        vote("proposal1", true);
+        allocate_resource("computing_power", 50);
+        update_reputation("user1", 5);
+        
+        proposal_id = create_proposal("New community project");
+        status = get_proposal_status(proposal_id);
+    "#;
+
+    let mut compiler = CSCLCompiler::new(cscl_code);
+    let opcodes = compiler.compile();
+
+    println!("Compiled CSCL code into {} opcodes", opcodes.len());
+
+    // Print all opcodes
+    for (i, opcode) in opcodes.iter().enumerate() {
+        println!("Opcode {}: {:?}", i, opcode);
     }
 
-    // Example: Deploy a proposal smart contract
-    let proposal_input = r#"Proposal
-Creator: Charlie
-Title: New Community Project
-Description: Implement a recycling program
-Voting Period: 604800
-Option 1: Approve
-Option 2: Reject
-Quorum: 0.5"#;
-
-    match parse_contract(proposal_input) {
-        Ok(mut contract) => {
-            contract.activate(); // Activate the contract before deployment
-            if let Err(e) = blockchain.deploy_smart_contract(contract) {
-                println!("Failed to deploy proposal contract: {}", e);
-            } else {
-                println!("Proposal contract deployed successfully!");
-            }
-        }
-        Err(e) => println!("Failed to parse proposal contract: {}", e),
+    // Create a CoopVM instance and execute the compiled code
+    let mut coop_vm = CoopVM::new(opcodes);
+    match coop_vm.run() {
+        Ok(_) => println!("CoopVM execution completed successfully"),
+        Err(e) => println!("CoopVM execution failed: {}", e),
     }
 
-    // Execute smart contracts
-    if let Err(e) = blockchain.execute_smart_contracts() {
-        println!("Failed to execute smart contracts: {}", e);
-    } else {
-        println!("Smart contracts executed successfully!");
-    }
+    // Print the final state of the CoopVM
+    println!("CoopVM final state:");
+    println!("Stack: {:?}", coop_vm.get_stack());
+    println!("Memory: {:?}", coop_vm.get_memory());
 
-    // Print initial blockchain state
-    println!("\nInitial Blockchain State:");
+    // Simulate some network activity
+    let node1 = network.add_node("Node1".to_string(), "127.0.0.1:8000".to_string());
+    let node2 = network.add_node("Node2".to_string(), "127.0.0.1:8001".to_string());
+    network.connect(node1, node2);
+
+    // Broadcast the latest block
+    let latest_block = blockchain.get_latest_block().unwrap();
+    network.broadcast_block(&latest_block);
+
+    // Print final blockchain state
+    println!("Blockchain state:");
     println!("Number of blocks: {}", blockchain.chain.len());
-    println!("Latest block smart contract results: {}", blockchain.chain.last().unwrap().smart_contract_results.len());
-    println!("Member balances:");
-    for member in ["Alice", "Bob", "Charlie", "Dave"].iter() {
-        let balance = blockchain.execution_environment.balances.get(*member)
-            .and_then(|b| b.get("ICN_TOKEN"))
-            .unwrap_or(&0.0);
-        println!("{}: {} ICN_TOKEN", member, balance);
-    }
+    println!("Latest block hash: {}", blockchain.get_latest_block().unwrap().hash);
 
-    // Run the CLI
-    run_cli(&mut blockchain);
+    // Print consensus state
+    println!("Consensus state:");
+    println!("Number of members: {}", consensus.get_member_count());
+    println!("Current vote threshold: {}", consensus.get_vote_threshold());
 
-    println!("Exiting ICN Project. Goodbye!");
+    // Print democratic system state
+    println!("Democratic system state:");
+    println!("Number of active proposals: {}", democratic_system.get_active_proposal_count());
+    
+    println!("ICN Node simulation completed.");
 }
