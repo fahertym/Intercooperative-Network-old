@@ -1,22 +1,22 @@
+// src/blockchain/transaction.rs
 use serde::{Deserialize, Serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
 use crate::smart_contract::SmartContract;
 use crate::currency::CurrencyType;
 
-// Struct representing a transaction in the blockchain
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)] // Added PartialEq
 pub struct Transaction {
-    pub from: String,                  // Sender's address (public key or DID)
-    pub to: String,                    // Recipient's address
-    pub amount: f64,                   // Amount of currency being transferred
-    pub currency_type: CurrencyType,   // Type of currency (e.g., BasicNeeds, Education)
-    pub gas_limit: u64,                // Maximum gas allowed for smart contract execution
-    pub smart_contract: Option<SmartContract>, // Optional smart contract to execute
-    pub signature: Option<String>,     // Digital signature to verify authenticity
+    pub from: String,
+    pub to: String,
+    pub amount: f64,
+    pub currency_type: CurrencyType,
+    pub gas_limit: u64,
+    pub smart_contract: Option<SmartContract>,
+    pub signature: Option<Vec<u8>>, // Changed to Vec<u8>
+    pub public_key: Option<Vec<u8>>, // Added public_key field
 }
 
 impl Transaction {
-    // Create a new Transaction
     pub fn new(from: String, to: String, amount: f64, currency_type: CurrencyType, gas_limit: u64) -> Self {
         Transaction {
             from,
@@ -26,34 +26,26 @@ impl Transaction {
             gas_limit,
             smart_contract: None,
             signature: None,
+            public_key: None,
         }
     }
 
-    // Attach a smart contract to the transaction
-    pub fn with_smart_contract(mut self, smart_contract: SmartContract) -> Self {
-        self.smart_contract = Some(smart_contract);
-        self
-    }
-
-    // Sign the transaction with the given keypair
     pub fn sign(&mut self, keypair: &Keypair) -> Result<(), String> {
         let message = self.to_bytes();
         let signature = keypair.sign(&message);
-        self.signature = Some(hex::encode(signature.to_bytes()));
+        self.signature = Some(signature.to_bytes().to_vec());
+        self.public_key = Some(keypair.public.to_bytes().to_vec());
         Ok(())
     }
 
-    // Verify the transaction's signature
     pub fn verify(&self, public_key: &PublicKey) -> Result<bool, String> {
         let message = self.to_bytes();
-        let signature_bytes = hex::decode(self.signature.as_ref().ok_or("No signature present")?).map_err(|e| e.to_string())?;
-        let signature = Signature::from_bytes(&signature_bytes).map_err(|e| e.to_string())?;
+        let signature_bytes = self.signature.as_ref().ok_or("No signature present")?;
+        let signature = Signature::from_bytes(signature_bytes).map_err(|e| e.to_string())?;
         Ok(public_key.verify(&message, &signature).is_ok())
     }
 
-    // Convert the transaction to bytes for signing/verification
-    fn to_bytes(&self) -> Vec<u8> {
-        // In a real implementation, this would properly serialize all fields
+    pub fn to_bytes(&self) -> Vec<u8> {
         format!("{}{}{}{:?}{}", self.from, self.to, self.amount, self.currency_type, self.gas_limit).into_bytes()
     }
 }

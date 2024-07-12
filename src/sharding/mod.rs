@@ -4,13 +4,16 @@ use std::collections::HashMap;
 use sha2::{Sha256, Digest};
 use crate::blockchain::{Block, Transaction};
 use crate::network::Node;
+use crate::currency::CurrencyType;
 use std::sync::{Arc, Mutex};
+use ed25519_dalek::{PublicKey, Signature, Verifier};
 
 /// Represents a shard in the network
 pub struct Shard {
     pub id: u64,
     pub nodes: Vec<Node>,
     pub blockchain: Vec<Block>,
+    pub balances: HashMap<String, HashMap<CurrencyType, f64>>,
 }
 
 /// Manages the sharding mechanism for the entire network
@@ -29,6 +32,7 @@ impl ShardingManager {
                 id: i,
                 nodes: Vec::new(),
                 blockchain: Vec::new(),
+                balances: HashMap::new(),
             })));
         }
         
@@ -75,8 +79,8 @@ impl ShardingManager {
             timestamp: chrono::Utc::now().timestamp(),
             transactions: vec![transaction.clone()],
             previous_hash: to_shard.blockchain.last().map(|b| b.hash.clone()).unwrap_or_default(),
-            hash: "".to_string(), // This should be properly calculated
-            nonce: 0,
+            hash: self.calculate_block_hash(&to_shard.blockchain, transaction),
+            nonce: 0, // In a real implementation, this would be calculated
             gas_used: 0, // This should be properly calculated
             smart_contract_results: HashMap::new(),
         };
@@ -84,18 +88,79 @@ impl ShardingManager {
         // Add the new block to the destination shard
         to_shard.blockchain.push(new_block);
 
+        // Update balances in the destination shard
+        self.update_balances(&mut to_shard, transaction)?;
+
         println!("Transaction moved from shard {} to shard {}", from_shard.id, to_shard.id);
         Ok(())
     }
 
     // Helper function to verify a transaction within a shard
-    fn verify_transaction(&self, _shard: &Shard, _transaction: &Transaction) -> bool {
-        // This is a placeholder. In a real implementation, we would:
-        // 1. Check if the transaction exists in the shard's blockchain
-        // 2. Verify the transaction's signature
-        // 3. Check if the sender has sufficient balance
-        // 4. Ensure the transaction hasn't been double-spent
-        true
+    fn verify_transaction(&self, shard: &Shard, transaction: &Transaction) -> bool {
+        // 1. Check if the sender has sufficient balance
+        if let Some(sender_balances) = shard.balances.get(&transaction.from) {
+            if let Some(balance) = sender_balances.get(&transaction.currency_type) {
+                if *balance < transaction.amount {
+                    return false; // Insufficient balance
+                }
+            } else {
+                return false; // Sender doesn't have the required currency type
+            }
+        } else {
+            return false; // Sender not found in this shard
+        }
+
+        // 2. Verify the transaction signature
+        if let (Some(public_key), Some(signature)) = (&transaction.public_key, &transaction.signature) {
+            let public_key = PublicKey::from_bytes(public_key).unwrap();
+            let signature = Signature::from_bytes(signature).unwrap();
+            let message = transaction.to_bytes();
+            if public_key.verify(&message, &signature).is_err() {
+                return false; // Signature verification failed
+            }
+        } else {
+            return false; // Missing public key or signature
+        }
+
+        // 3. Check for double-spending
+        for block in &shard.blockchain {
+            for tx in &block.transactions {
+                if tx == transaction {
+                    return false; // Transaction already exists in the blockchain
+                }
+            }
+        }
+
+        true // All checks passed
+    }
+
+    // Helper function to update balances after a transaction
+    fn update_balances(&self, shard: &mut Shard, transaction: &Transaction) -> Result<(), String> {
+        // Deduct from sender
+        let sender_balances = shard.balances.entry(transaction.from.clone()).or_insert_with(HashMap::new);
+        let sender_balance = sender_balances.entry(transaction.currency_type.clone()).or_insert(0.0);
+        if *sender_balance < transaction.amount {
+            return Err("Insufficient balance".to_string());
+        }
+        *sender_balance -= transaction.amount;
+
+        // Add to recipient
+        let recipient_balances = shard.balances.entry(transaction.to.clone()).or_insert_with(HashMap::new);
+        let recipient_balance = recipient_balances.entry(transaction.currency_type.clone()).or_insert(0.0);
+        *recipient_balance += transaction.amount;
+
+        Ok(())
+    }
+
+    // Helper function to calculate block hash
+    fn calculate_block_hash(&self, blockchain: &[Block], transaction: &Transaction) -> String {
+        let mut hasher = Sha256::new();
+        if let Some(last_block) = blockchain.last() {
+            hasher.update(&last_block.hash);
+        }
+        hasher.update(transaction.to_bytes());
+        let result = hasher.finalize();
+        hex::encode(result)
     }
 
     // Updated hash_data method using SHA-256
@@ -117,6 +182,7 @@ mod tests {
     use crate::network::Node;
     use crate::network::network::NodeType;
     use crate::currency::CurrencyType;
+    use ed25519_dalek::{Keypair, Signer};
 
     #[test]
     fn test_create_sharding_manager() {
@@ -174,7 +240,11 @@ mod tests {
         manager.assign_node_to_shard(node1, 0).unwrap();
         manager.assign_node_to_shard(node2, 1).unwrap();
 
-        let transaction = Transaction::new(
+        // Generate a keypair for the transaction
+        let mut csprng = rand::rngs::OsRng{};
+        let keypair: Keypair = Keypair::generate(&mut csprng);
+
+        let mut transaction = Transaction::new(
             "Alice".to_string(),
             "Bob".to_string(),
             100.0,
@@ -182,6 +252,24 @@ mod tests {
             1000,
         );
 
+        // Sign the transaction
+        let message = transaction.to_bytes();
+        let signature = keypair.sign(&message);
+        transaction.signature = Some(signature.to_bytes().to_vec());
+        transaction.public_key = Some(keypair.public.to_bytes().to_vec());
+
+        // Add balance to Alice in shard 0
+        let mut shard0 = manager.shards.get(&0).unwrap().lock().unwrap(); // Added mut here
+        shard0.balances.entry("Alice".to_string()).or_insert_with(HashMap::new).insert(CurrencyType::BasicNeeds, 1000.0);
+        drop(shard0);
+
         assert!(manager.cross_shard_communication(0, 1, &transaction).is_ok());
+
+        // Verify balances after cross-shard communication
+        let shard0 = manager.shards.get(&0).unwrap().lock().unwrap();
+        let shard1 = manager.shards.get(&1).unwrap().lock().unwrap();
+        
+        assert_eq!(shard0.balances.get("Alice").unwrap().get(&CurrencyType::BasicNeeds), Some(&900.0));
+        assert_eq!(shard1.balances.get("Bob").unwrap().get(&CurrencyType::BasicNeeds), Some(&100.0));
     }
 }

@@ -27,7 +27,7 @@ pub enum ContractStatus {
 }
 
 // The main struct representing a smart contract
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SmartContract {
     pub id: String,                // Unique identifier for the contract
     pub contract_type: ContractType, // The type of the contract
