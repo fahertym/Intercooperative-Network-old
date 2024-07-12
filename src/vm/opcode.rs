@@ -1,3 +1,12 @@
+#[derive(Debug, Clone, PartialEq, PartialOrd)] // Add PartialOrd here
+pub enum Value {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Opcode {
     Push(Value),
     Pop,
@@ -21,11 +30,4 @@ pub enum Opcode {
     CreateProposal,
     GetProposalStatus,
     Emit(String),
-}
-
-pub enum Value {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    String(String),
 }

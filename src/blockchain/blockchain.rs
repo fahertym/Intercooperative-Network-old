@@ -1,16 +1,5 @@
 // Filename: src/blockchain/blockchain.rs
 
-// ===============================================
-// Blockchain Implementation
-// ===============================================
-// This file contains the structure and functions for managing the entire blockchain.
-// It defines the Blockchain structure, methods for adding new blocks, validating the chain,
-// and managing transactions.
-
-// ===============================================
-// Imports
-// ===============================================
-
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use rand::distributions::{Distribution, Uniform};
@@ -18,8 +7,7 @@ use rand::thread_rng;
 
 use crate::blockchain::Block;
 use crate::blockchain::Transaction;
-use crate::smart_contract::SmartContract;
-use crate::smart_contract::ExecutionEnvironment;
+use crate::smart_contract::{SmartContract, ExecutionEnvironment};
 use crate::consensus::Consensus;
 
 // ===============================================
@@ -170,14 +158,12 @@ impl Blockchain {
         for transaction in transactions {
             if let Some(ref contract) = transaction.smart_contract {
                 let result = contract.execute(&mut self.execution_environment)?;
-                // Assuming result is now a String, if not, you need to implement ToString for the result type
-                block.add_smart_contract_result(contract.id.clone(), result.to_string(), transaction.gas_limit);
+                block.add_smart_contract_result(contract.id.clone(), result, transaction.gas_limit);
             }
         }
         Ok(())
     }
 
-    
     // Select a proposer for the next block based on reputation
     pub fn select_proposer(&self) -> Option<String> {
         let total_reputation: f64 = self.consensus.members.values().map(|member| member.reputation).sum();

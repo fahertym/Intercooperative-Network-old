@@ -1,27 +1,8 @@
-// Filename: src/smart_contract/mod.rs
+// File: src/smart_contract/smart_contract.rs
 
-// ===============================================
-// Smart Contract Implementation
-// ===============================================
-// This file contains the implementation of smart contracts for our blockchain.
-// It defines the structure of smart contracts, various types of contracts,
-// and the execution environment in which these contracts run.
-//
-// Key concepts:
-// - Smart Contract: Self-executing code that runs on the blockchain
-// - Contract Types: Different categories of smart contracts (e.g., AssetTransfer, Proposal)
-// - Execution Environment: The context in which smart contracts are executed
-// - Contract Lifecycle: The stages a contract goes through (Pending, Active, Completed, Terminated)
-
-// Filename: src/smart_contract/mod.rs
-
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
-
-// ===============================================
-// Smart Contract Struct and Enums
-// ===============================================
+use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
 
 // Enum representing different types of smart contracts
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -34,7 +15,7 @@ pub enum ContractType {
     IdentityVerification,
     CooperativeMembership,
     Custom(String),
-// Remove the extra closing brace
+}
 
 // Enum representing the possible statuses of a smart contract
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -55,8 +36,8 @@ pub struct SmartContract {
     pub content: String,           // The actual code or logic of the contract
     pub status: ContractStatus,    // Current status of the contract
 }
-    
 
+impl SmartContract {
     // Activate the contract, changing its status to Active
     pub fn activate(&mut self) {
         self.status = ContractStatus::Active;
@@ -92,10 +73,7 @@ pub struct SmartContract {
         }
     }
 
-    // ===============================================
     // Specific Execution Functions for Contract Types
-    // ===============================================
-
     fn execute_asset_transfer(&self, env: &mut ExecutionEnvironment) -> Result<String, String> {
         let params: AssetTransferParams = serde_json::from_str(&self.content)
             .map_err(|e| format!("Failed to parse asset transfer params: {}", e))?;
@@ -179,52 +157,18 @@ pub struct SmartContract {
         env.custom_contracts.insert(self.id.clone(), (name.to_string(), self.content.clone()));
         Ok("Custom contract executed".to_string())
     }
-
-
-// ===============================================
-// Execution Environment
-// ===============================================
+}
 
 // The ExecutionEnvironment struct represents the context in which smart contracts are executed
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionEnvironment {
-    // Add fields and methods here if needed
-}
-
-impl ExecutionEnvironment {
-    // Tally votes for a proposal
-    pub fn tally_votes(&self, proposal_id: &str) -> (usize, usize) {
-        // Add implementation here
-        (0, 0)
-    }
-}
-
-// Define the ContractStatus enum
-#[derive(Debug, Serialize, Deserialize)]
-enum ContractStatus {
-    // Add contract statuses here
-}
-
-// Define the SmartContract struct
-#[derive(Debug, Serialize, Deserialize)]
-struct SmartContract {
-    // Add fields and methods here
-}
-
-impl SmartContract {
-    // Add implementation here
-}
-
-// Define the parse_contract function
-fn parse_contract(input: &str) -> Result<SmartContract, String> {
-    // Add imp//// Remove the extra closing braceRemove the extra closing brace/ Remove the extra closing braceementation here
-    Err("Not implemented".to_string())
-} proposals
-    pub votes: HashMap<String, Vec<(String, bool)>>,     // Votes for proposals
+    pub balances: HashMap<String, HashMap<String, f64>>, // User balances by asset type
+    pub proposals: HashMap<String, ProposalParams>, // Active proposals
     pub service_agreements: HashMap<String, ServiceAgreementParams>, // Active service agreements
     pub resource_allocations: HashMap<String, ResourceAllocationParams>, // Resource allocations
     pub identities: HashMap<String, IdentityVerificationParams>, // Verified identities
     pub memberships: HashMap<String, CooperativeMembershipParams>, // Cooperative memberships
+    pub votes: HashMap<String, Vec<(String, bool)>>, // Votes
     pub custom_contracts: HashMap<String, (String, String)>, // Custom contracts
 }
 
@@ -232,54 +176,25 @@ impl ExecutionEnvironment {
     // Create a new ExecutionEnvironment
     pub fn new() -> Self {
         ExecutionEnvironment {
-
-
-
-
-
-
-
-
+            balances: HashMap::new(),
+            proposals: HashMap::new(),
+            service_agreements: HashMap::new(),
+            resource_allocations: HashMap::new(),
+            identities: HashMap::new(),
+            memberships: HashMap::new(),
+            votes: HashMap::new(),
+            custom_contracts: HashMap::new(),
         }
     }
 
     // Add balance to a user's account
     pub fn add_balance(&mut self, user: &str, asset: &str, amount: f64) {
-
-
-    // Get the balance of a user's account
-    pub fn get_balance(&self, user: &str, asset: &str) -> f64 {
-
-
-    // Tally votes for a proposal
-    pub fn tally_votes(&self, proposal_id: &str) -> (usize, usize) {
-
-
-
-    }
-}
-
-// ===============================================
-// Parameter Structs for Different Contract Types
-// ===============================================
-
-#[derive(Debug, Serialize, Deserialize)]
-struct AssetTransferParams {
-
-
-
-
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ProposalParams {
-
-
-
-
-
-
-}nsert(amount);
+        self.balances
+            .entry(user.to_string())
+            .or_insert_with(HashMap::new)
+            .entry(asset.to_string())
+            .and_modify(|e| *e += amount)
+            .or_insert(amount);
     }
 
     // Get the balance of a user's account
@@ -299,10 +214,7 @@ pub struct ProposalParams {
     }
 }
 
-// ===============================================
 // Parameter Structs for Different Contract Types
-// ===============================================
-
 #[derive(Debug, Serialize, Deserialize)]
 struct AssetTransferParams {
     from: String,
@@ -364,15 +276,14 @@ pub struct CooperativeMembershipParams {
     subscription_period: std::time::Duration,
 }
 
-// ===============================================
 // Utility Functions and Modules
-// ===============================================
-
-// Parse a contract from a JSON string
+#[allow(dead_code)]
 pub fn parse_contract(input: &str) -> Result<SmartContract, String> {
     serde_json::from_str(input)
         .map_err(|e| format!("Failed to parse contract: {}", e))
 }
+
+
 
 // Module for serializing and deserializing Duration
 mod duration_serde {
@@ -395,10 +306,7 @@ mod duration_serde {
     }
 }
 
-// ===============================================
 // Tests
-// ===============================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,152 +328,175 @@ mod tests {
         assert_eq!(contract.creator, "Alice");
         assert_eq!(contract.status, ContractStatus::Pending);
     }
-}
 
     #[test]
     fn test_execute_asset_transfer() {
         let mut env = ExecutionEnvironment::new();
         env.add_balance("Alice", "ICN_TOKEN", 1000.0);
 
-        let mut contract = SmartContract::new(
-            ContractType::AssetTransfer,
-            "Alice".to_string(),
-            r#"{"from": "Alice", "to": "Bob", "asset": "ICN_TOKEN", "amount": 100.0}"#.to_string(),
-        );
-        
+        let mut contract = SmartContract {
+            id: "contract_1".to_string(),
+            contract_type: ContractType::AssetTransfer,
+            creator: "Alice".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"from": "Alice", "to": "Bob", "asset": "ICN_TOKEN", "amount": 100.0}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
         contract.activate();
         
         assert!(contract.execute(&mut env).is_ok());
         assert_eq!(env.get_balance("Alice", "ICN_TOKEN"), 900.0);
         assert_eq!(env.get_balance("Bob", "ICN_TOKEN"), 100.0);
     }
-    
+
     #[test]
     fn test_execute_proposal() {
         let mut env = ExecutionEnvironment::new();
-        let mut contract = SmartContract::new(
-            ContractType::Proposal,
-            "Charlie".to_string(),
-            r#"{"title": "New Project", "description": "Start a community garden", "options": ["Approve", "Reject"], "voting_period": 604800, "quorum": 0.5}"#.to_string(),
-        );
-    
+        let mut contract = SmartContract {
+            id: "contract_2".to_string(),
+            contract_type: ContractType::Proposal,
+            creator: "Charlie".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"title": "New Project", "description": "Start a community garden", "options": ["Approve", "Reject"], "voting_period": 604800, "quorum": 0.5}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
         contract.activate();
         assert!(contract.execute(&mut env).is_ok());
         assert_eq!(env.proposals.len(), 1);
         assert!(env.proposals.contains_key(&contract.id));
     }
-    
+
     #[test]
     fn test_execute_governance_vote() {
         let mut env = ExecutionEnvironment::new();
         let proposal_id = "proposal_1".to_string();
-        let mut contract = SmartContract::new(
-            ContractType::GovernanceVote,
-            "Dave".to_string(),
-            format!(r#"{{"proposal_id": "{}", "voter": "Dave", "vote": true}}"#, proposal_id),
-        );
-    
+        let mut contract = SmartContract {
+            id: "contract_3".to_string(),
+            contract_type: ContractType::GovernanceVote,
+            creator: "Dave".to_string(),
+            created_at: Utc::now(),
+            content: format!(r#"{{"proposal_id": "{}", "voter": "Dave", "vote": true}}"#, proposal_id),
+            status: ContractStatus::Pending,
+        };
+
         contract.activate();
         assert!(contract.execute(&mut env).is_ok());
         assert_eq!(env.votes.len(), 1);
         assert_eq!(env.votes[&proposal_id], vec![("Dave".to_string(), true)]);
     }
-    
+
     #[test]
     fn test_execute_service_agreement() {
         let mut env = ExecutionEnvironment::new();
-        let mut contract = SmartContract::new(
-            ContractType::ServiceAgreement,
-            "Eve".to_string(),
-            r#"{"provider": "Eve", "consumer": "Frank", "service": "Web Development", "terms": "Develop a website for 1000 ICN_TOKEN", "start_date": "2023-07-01T00:00:00Z", "end_date": "2023-08-01T00:00:00Z"}"#.to_string(),
-        );
-    
+        let mut contract = SmartContract {
+            id: "contract_4".to_string(),
+            contract_type: ContractType::ServiceAgreement,
+            creator: "Eve".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"provider": "Eve", "consumer": "Frank", "service": "Web Development", "terms": "Develop a website for 1000 ICN_TOKEN", "start_date": "2023-07-01T00:00:00Z", "end_date": "2023-08-01T00:00:00Z"}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
         contract.activate();
         assert!(contract.execute(&mut env).is_ok());
         assert_eq!(env.service_agreements.len(), 1);
         assert!(env.service_agreements.contains_key(&contract.id));
     }
-    
+
     #[test]
     fn test_execute_resource_allocation() {
         let mut env = ExecutionEnvironment::new();
-        let mut contract = SmartContract::new(
-            ContractType::ResourceAllocation,
-            "Grace".to_string(),
-            r#"{"resource": "Computing Power", "amount": 100.0, "recipient": "Research Team", "duration": 2592000}"#.to_string(),
-        );
-    
+        let mut contract = SmartContract {
+            id: "contract_5".to_string(),
+            contract_type: ContractType::ResourceAllocation,
+            creator: "Grace".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"resource": "Computing Power", "amount": 100.0, "recipient": "Research Team", "duration": 2592000}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
         contract.activate();
         assert!(contract.execute(&mut env).is_ok());
         assert_eq!(env.resource_allocations.len(), 1);
         assert!(env.resource_allocations.contains_key(&contract.id));
     }
-    
+
     #[test]
     fn test_execute_identity_verification() {
         let mut env = ExecutionEnvironment::new();
-        let mut contract = SmartContract::new(
-            ContractType::IdentityVerification,
-            "Henry".to_string(),
-            r#"{"user_id": "Henry", "verification_data": "Passport: AB123456", "verification_method": "Government ID", "expiration": "2025-07-01T00:00:00Z"}"#.to_string(),
-        );
-    
+        let mut contract = SmartContract {
+            id: "contract_6".to_string(),
+            contract_type: ContractType::IdentityVerification,
+            creator: "Henry".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"user_id": "Henry", "verification_data": "Passport: AB123456", "verification_method": "Government ID", "expiration": "2025-07-01T00:00:00Z"}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
         contract.activate();
         assert!(contract.execute(&mut env).is_ok());
         assert_eq!(env.identities.len(), 1);
         assert!(env.identities.contains_key("Henry"));
     }
-    
+
     #[test]
     fn test_execute_cooperative_membership() {
         let mut env = ExecutionEnvironment::new();
-        let mut contract = SmartContract::new(
-            ContractType::CooperativeMembership,
-            "Ivy".to_string(),
-            r#"{"user_id": "Ivy", "membership_type": "Full Member", "join_date": "2023-07-01T00:00:00Z", "subscription_period": 31536000}"#.to_string(),
-        );
-    
+        let mut contract = SmartContract {
+            id: "contract_7".to_string(),
+            contract_type: ContractType::CooperativeMembership,
+            creator: "Ivy".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"user_id": "Ivy", "membership_type": "Full Member", "join_date": "2023-07-01T00:00:00Z", "subscription_period": 31536000}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
         contract.activate();
         assert!(contract.execute(&mut env).is_ok());
         assert_eq!(env.memberships.len(), 1);
         assert!(env.memberships.contains_key("Ivy"));
     }
-    
+
     #[test]
     fn test_execute_custom_contract() {
         let mut env = ExecutionEnvironment::new();
-        let mut contract = SmartContract::new(
-            ContractType::Custom("DataSharing".to_string()),
-            "Jack".to_string(),
-            r#"{"data_provider": "Jack", "data_consumer": "Research Institute", "dataset": "Anonymous Health Records", "usage_terms": "Research purposes only", "compensation": 500}"#.to_string(),
-        );
-    
+        let mut contract = SmartContract {
+            id: "contract_8".to_string(),
+            contract_type: ContractType::Custom("DataSharing".to_string()),
+            creator: "Jack".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"data_provider": "Jack", "data_consumer": "Research Institute", "dataset": "Anonymous Health Records", "usage_terms": "Research purposes only", "compensation": 500}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
         contract.activate();
         assert!(contract.execute(&mut env).is_ok());
         assert_eq!(env.custom_contracts.len(), 1);
         assert!(env.custom_contracts.contains_key(&contract.id));
     }
-    
+
     #[test]
     fn test_contract_lifecycle() {
-        let mut contract = SmartContract::new(
-            ContractType::AssetTransfer,
-            "Alice".to_string(),
-            r#"{"from": "Alice", "to": "Bob", "asset": "ICN_TOKEN", "amount": 100.0}"#.to_string(),
-        );
-    
+        let mut contract = SmartContract {
+            id: "contract_9".to_string(),
+            contract_type: ContractType::AssetTransfer,
+            creator: "Alice".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"from": "Alice", "to": "Bob", "asset": "ICN_TOKEN", "amount": 100.0}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
         assert_eq!(contract.status, ContractStatus::Pending);
-    
+
         contract.activate();
         assert_eq!(contract.status, ContractStatus::Active);
-    
+
         contract.complete();
         assert_eq!(contract.status, ContractStatus::Completed);
-    
+
         contract.terminate();
         assert_eq!(contract.status, ContractStatus::Terminated);
     }
 }
-// ===============================================
-// End of File
-// ===============================================

@@ -1,25 +1,9 @@
-// Filename: src/blockchain/transaction.rs
-
-// ===============================================
-// Transaction Implementation
-// ===============================================
-// This file contains the structure and functions for a single transaction in the blockchain.
-// A transaction represents a record of value transfer or smart contract interaction.
-
-// ===============================================
-// Imports
-// ===============================================
-
 use serde::{Deserialize, Serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
 use crate::smart_contract::SmartContract;
 use crate::currency::CurrencyType;
 
-// ===============================================
-// Transaction Struct
-// ===============================================
-// Represents a single transaction in the blockchain
-
+// Struct representing a transaction in the blockchain
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     pub from: String,                  // Sender's address (public key or DID)

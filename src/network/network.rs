@@ -15,7 +15,6 @@
 
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-
 use crate::blockchain::Block;
 
 // ===============================================
@@ -204,4 +203,17 @@ mod tests {
         // Test synchronization (this just checks that it doesn't panic)
         network.synchronize_blockchain(&vec![block]);
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum PacketType {
+    Interest,
+    Data,
+}
+
+#[derive(Clone, Debug)]
+pub struct Packet {
+    pub packet_type: PacketType,
+    pub name: String,
+    pub content: Vec<u8>,
 }

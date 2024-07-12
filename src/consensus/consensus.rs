@@ -1,42 +1,20 @@
-// Filename: src/consensus/consensus.rs
-
-// ===============================================
-// Consensus Mechanism Implementation
-// ===============================================
-// This file contains the implementation of the consensus mechanism
-// used in the blockchain. It includes the structures and functions
-// necessary to achieve agreement on the state of the blockchain.
-//
-// Key concepts:
-// - Consensus: The process of achieving agreement on the state of the blockchain
-// - Proof of Contribution (PoC): A consensus mechanism that rewards nodes
-//   based on their contributions to the network
-
 use chrono::{DateTime, Utc};
-// use rand::Rng;
 use rand::distributions::{Distribution, Uniform};
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
-// ===============================================
 // Constants
-// ===============================================
-
 const DECAY_RATE: f64 = 0.1; // The rate at which reputation decays over time
 
-// ===============================================
-// Structures and Enums
-// ===============================================
-
-// Represents a member in the consensus mechanism
+// Struct representing a member in the consensus mechanism
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Member {
-    pub id: String,           // Unique identifier for the member
-    pub reputation: f64,      // Reputation score of the member
+    pub id: String,               // Unique identifier for the member
+    pub reputation: f64,          // Reputation score of the member
     pub last_decay: DateTime<Utc>, // Timestamp of the last reputation decay
 }
 
-// Represents the consensus mechanism
+// Struct representing the consensus mechanism
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Consensus {
     pub members: HashMap<String, Member>, // List of members in the consensus mechanism

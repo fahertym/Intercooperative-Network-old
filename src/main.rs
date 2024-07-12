@@ -1,17 +1,15 @@
-// src/main.rs
-
 use icn_node::{
     IcnNode, CSCLCompiler, Blockchain, Transaction, PoCConsensus, DemocraticSystem,
-    ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, Opcode, Value,
-    CurrencyType, Node, NodeType
+    ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, CurrencyType, Node,
 };
+use icn_node::network::network::NodeType;
 use chrono::Utc;
 use std::collections::HashMap;
 
 fn main() {
     // Initialize the ICN Node with all its components
-    let mut node = IcnNode::new();
-
+    let _node = IcnNode::new();
+    
     // Initialize the blockchain
     let mut blockchain = Blockchain::new();
 
@@ -44,7 +42,9 @@ fn main() {
     blockchain.add_transaction(tx1);
 
     // Create a block containing the initial transactions
-    blockchain.create_block("Alice".to_string()).unwrap();
+    if let Err(e) = blockchain.create_block("Alice".to_string()) {
+        println!("Error creating block: {}", e);
+    }
 
     // Create a proposal for the democratic system
     let proposal_id = democratic_system.create_proposal(
@@ -59,51 +59,50 @@ fn main() {
     );
 
     // Participants vote on the proposal
-    democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0).unwrap();
-    democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0).unwrap();
+    if let Err(e) = democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0) {
+        println!("Error voting on proposal: {}", e);
+    }
+    if let Err(e) = democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0) {
+        println!("Error voting on proposal: {}", e);
+    }
 
     // Tally votes for the proposal
-    democratic_system.tally_votes(&proposal_id).unwrap();
+    if let Err(e) = democratic_system.tally_votes(&proposal_id) {
+        println!("Error tallying votes: {}", e);
+    }
 
     // Example usage of CSCL compiler
-    let cscl_code = r#"
-        function calculate_reward(contribution) {
-            return contribution * 2;
-        }
-
-        initial_contribution = 100;
-        reward = calculate_reward(initial_contribution);
-        emit("RewardCalculated", reward);
-
-        vote("proposal1", true);
-        allocate_resource("computing_power", 50);
-        update_reputation("user1", 5);
-        
-        proposal_id = create_proposal("New community project");
-        status = get_proposal_status(proposal_id);
-    "#;
+  let cscl_code = r#"
+    x = 100 + 50;
+    y = 200 - 25;
+    z = x * y / 10;
+    emit("Result", z);
+"#;
 
     let mut compiler = CSCLCompiler::new(cscl_code);
-    let opcodes = compiler.compile().expect("Compilation failed");
+    match compiler.compile() {
+        Ok(opcodes) => {
+            println!("Compiled CSCL code into {} opcodes", opcodes.len());
 
-    println!("Compiled CSCL code into {} opcodes", opcodes.len());
+            // Print all compiled opcodes
+            for (i, opcode) in opcodes.iter().enumerate() {
+                println!("Opcode {}: {:?}", i, opcode);
+            }
 
-    // Print all compiled opcodes
-    for (i, opcode) in opcodes.iter().enumerate() {
-        println!("Opcode {}: {:?}", i, opcode);
+            // Create a CoopVM instance and execute the compiled code
+            let mut coop_vm = CoopVM::new(opcodes);
+            match coop_vm.run() {
+                Ok(_) => println!("CoopVM execution completed successfully"),
+                Err(e) => println!("CoopVM execution failed: {}", e),
+            }
+
+            // Print the final state of the CoopVM
+            println!("CoopVM final state:");
+            println!("Stack: {:?}", coop_vm.get_stack());
+            println!("Memory: {:?}", coop_vm.get_memory());
+        },
+        Err(e) => println!("Compilation failed: {}", e),
     }
-
-    // Create a CoopVM instance and execute the compiled code
-    let mut coop_vm = CoopVM::new(opcodes);
-    match coop_vm.run() {
-        Ok(_) => println!("CoopVM execution completed successfully"),
-        Err(e) => println!("CoopVM execution failed: {}", e),
-    }
-
-    // Print the final state of the CoopVM
-    println!("CoopVM final state:");
-    println!("Stack: {:?}", coop_vm.get_stack());
-    println!("Memory: {:?}", coop_vm.get_memory());
 
     // Simulate some network activity
     let node1 = Node::new("Node1", NodeType::PersonalDevice, "127.0.0.1:8000");
@@ -112,13 +111,20 @@ fn main() {
     network.add_node(node2.clone());
 
     // Broadcast the latest block
-    let latest_block = blockchain.get_latest_block().unwrap();
-    network.broadcast_block(&latest_block);
+    if let Some(latest_block) = blockchain.get_latest_block() {
+        network.broadcast_block(&latest_block);
+    } else {
+        println!("No blocks in the blockchain to broadcast");
+    }
 
     // Print final blockchain state
     println!("Blockchain state:");
     println!("Number of blocks: {}", blockchain.chain.len());
-    println!("Latest block hash: {}", blockchain.get_latest_block().unwrap().hash);
+    if let Some(latest_block) = blockchain.get_latest_block() {
+        println!("Latest block hash: {}", latest_block.hash);
+    } else {
+        println!("No blocks in the blockchain");
+    }
 
     // Print consensus state
     println!("Consensus state:");

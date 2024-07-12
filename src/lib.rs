@@ -1,5 +1,3 @@
-// src/lib.rs
-
 use std::sync::{Arc, Mutex};
 use std::error::Error;
 
@@ -22,8 +20,6 @@ pub use network::{Node, Network, Packet, PacketType};
 pub use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
 pub use smart_contract::{SmartContract, ExecutionEnvironment};
 pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
-
-
 
 /// The main struct representing an ICN Node.
 /// It contains the content store, PIT, FIB, blockchain, and CoopVM.
@@ -102,7 +98,7 @@ impl IcnNode {
     pub fn execute_smart_contract(&self, contract: String) -> Result<(), Box<dyn Error>> {
         let mut coop_vm = self.coop_vm.lock().unwrap();
         let opcodes = self.compile_contract(&contract)?;
-        coop_vm.load_program(opcodes);
+        coop_vm.load_program(opcodes); // Ensure this method is correctly called
         coop_vm.run()?;
         Ok(())
     }
@@ -114,7 +110,7 @@ impl IcnNode {
     /// A vector of opcodes representing the compiled contract.
     fn compile_contract(&self, contract: &str) -> Result<Vec<Opcode>, Box<dyn Error>> {
         let mut compiler = CSCLCompiler::new(contract);
-        Ok(compiler.compile())
+        compiler.compile()
     }
 }
 
