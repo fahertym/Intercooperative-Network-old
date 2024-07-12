@@ -10,6 +10,7 @@ pub mod network;
 pub mod node;
 pub mod smart_contract;
 pub mod vm;
+pub mod sharding; // New module
 
 pub use blockchain::{Block, Transaction, Blockchain};
 pub use consensus::PoCConsensus;
@@ -20,6 +21,7 @@ pub use network::{Node, Network, Packet, PacketType};
 pub use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
 pub use smart_contract::{SmartContract, ExecutionEnvironment};
 pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
+pub use sharding::ShardingManager; // New export
 
 /// The main struct representing an ICN Node.
 /// It contains the content store, PIT, FIB, blockchain, and CoopVM.
@@ -29,6 +31,7 @@ pub struct IcnNode {
     pub fib: Arc<Mutex<ForwardingInformationBase>>,
     pub blockchain: Arc<Mutex<Blockchain>>,
     pub coop_vm: Arc<Mutex<CoopVM>>,
+    pub sharding_manager: Arc<Mutex<ShardingManager>>, // New field
 }
 
 impl IcnNode {
@@ -36,6 +39,7 @@ impl IcnNode {
     pub fn new() -> Self {
         let blockchain = Blockchain::new();
         let coop_vm = CoopVM::new(Vec::new()); // Initialize with empty program
+        let sharding_manager = ShardingManager::new(4, 10); // Initialize with 4 shards, 10 nodes per shard
 
         IcnNode {
             content_store: Arc::new(Mutex::new(ContentStore::new())),
@@ -43,6 +47,7 @@ impl IcnNode {
             fib: Arc::new(Mutex::new(ForwardingInformationBase::new())),
             blockchain: Arc::new(Mutex::new(blockchain)),
             coop_vm: Arc::new(Mutex::new(coop_vm)),
+            sharding_manager: Arc::new(Mutex::new(sharding_manager)),
         }
     }
 
@@ -98,7 +103,7 @@ impl IcnNode {
     pub fn execute_smart_contract(&self, contract: String) -> Result<(), Box<dyn Error>> {
         let mut coop_vm = self.coop_vm.lock().unwrap();
         let opcodes = self.compile_contract(&contract)?;
-        coop_vm.load_program(opcodes); // Ensure this method is correctly called
+        coop_vm.load_program(opcodes);
         coop_vm.run()?;
         Ok(())
     }

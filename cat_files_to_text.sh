@@ -8,23 +8,20 @@ OUTPUT_FILE="all_files_content.txt"
 
 # Function to process files and append their contents to the output file
 process_files() {
-  for file in "$1"/*.rs; do
-    if [ -f "$file" ]; then
+  for file in "$1"/*; do
+    if [ -f "$file" ] && [[ "$file" == *.rs || "$file" == *.toml ]]; then
       echo "===== START OF $file =====" >> $OUTPUT_FILE
       cat "$file" >> $OUTPUT_FILE
       echo "===== END OF $file =====" >> $OUTPUT_FILE
       echo >> $OUTPUT_FILE
-    fi
-  done
-
-  for dir in "$1"/*; do
-    if [ -d "$dir" ]; then
-      process_files "$dir"
+    elif [ -d "$file" ]; then
+      process_files "$file"
     fi
   done
 }
 
-# Start processing from the src directory
+# Process files in the src directory and the root directory
 process_files "src"
+process_files "."
 
 echo "All files have been processed and concatenated into $OUTPUT_FILE."
