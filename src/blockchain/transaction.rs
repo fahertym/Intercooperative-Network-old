@@ -1,4 +1,5 @@
 // src/blockchain/transaction.rs
+
 use serde::{Deserialize, Serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
 use crate::smart_contract::SmartContract;
