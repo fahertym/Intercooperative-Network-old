@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Name of the output file
-OUTPUT_FILE="all_files_content.txt"
+OUTPUT_FILE="all_code_files_content.txt"
 
 # Clear the output file if it already exists
 > $OUTPUT_FILE
@@ -14,14 +14,21 @@ process_files() {
       cat "$file" >> $OUTPUT_FILE
       echo "===== END OF $file =====" >> $OUTPUT_FILE
       echo >> $OUTPUT_FILE
-    elif [ -d "$file" ]; then
+    elif [ -d "$file" ] && [[ "$file" != *"target"* ]]; then
       process_files "$file"
     fi
   done
 }
 
-# Process files in the src directory and the root directory
+# Process files in the src directory
 process_files "src"
-process_files "."
 
-echo "All files have been processed and concatenated into $OUTPUT_FILE."
+# Include the Cargo.toml file in the root directory
+if [ -f "Cargo.toml" ]; then
+  echo "===== START OF Cargo.toml =====" >> $OUTPUT_FILE
+  cat "Cargo.toml" >> $OUTPUT_FILE
+  echo "===== END OF Cargo.toml =====" >> $OUTPUT_FILE
+  echo >> $OUTPUT_FILE
+fi
+
+echo "All relevant files have been processed and concatenated into $OUTPUT_FILE."

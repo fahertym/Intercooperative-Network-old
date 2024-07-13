@@ -1,0 +1,4968 @@
+===== START OF src/blockchain/blockchain.rs =====
+// Filename: src/blockchain/blockchain.rs
+
+use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use rand::distributions::{Distribution, Uniform};
+use rand::thread_rng;
+
+use crate::blockchain::Block;
+use crate::blockchain::Transaction;
+use crate::smart_contract::{SmartContract, ExecutionEnvironment};
+use crate::consensus::Consensus;
+
+// ===============================================
+// Blockchain Struct
+// ===============================================
+// Represents the entire blockchain
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Blockchain {
+    pub chain: Vec<Block>,
+    pub pending_transactions: Vec<Transaction>,
+    pub smart_contracts: HashMap<String, SmartContract>,
+    pub execution_environment: ExecutionEnvironment,
+    pub consensus: Consensus,
+}
+
+impl Blockchain {
+    // Create a new Blockchain with a genesis block
+    pub fn new() -> Self {
+        let mut blockchain = Blockchain {
+            chain: vec![],
+            pending_transactions: vec![],
+            smart_contracts: HashMap::new(),
+            execution_environment: ExecutionEnvironment::new(),
+            consensus: Consensus::new(),
+        };
+        
+        // Create and add the genesis block
+        let genesis_block = Block::new(0, vec![], String::new());
+        blockchain.chain.push(genesis_block);
+        
+        blockchain
+    }
+
+    // Add a new block to the chain
+    pub fn create_block(&mut self, _proposer: String) -> Result<(), String> {
+        let previous_block = self.chain.last().ok_or("No previous block found")?;
+        let new_block = Block::new(self.chain.len() as u64, self.pending_transactions.clone(), previous_block.hash.clone());
+        
+        // Validate the new block
+        self.validate_block(&new_block)?;
+        
+        // Add the block to the chain
+        self.chain.push(new_block);
+        
+        // Clear pending transactions
+        self.pending_transactions.clear();
+        
+        Ok(())
+    }
+
+    // Validate a block
+    pub fn validate_block(&self, block: &Block) -> Result<(), String> {
+        // Check if the previous hash matches
+        if let Some(previous_block) = self.chain.last() {
+            if block.previous_hash != previous_block.hash {
+                return Err("Invalid previous hash".to_string());
+            }
+        }
+
+        // Verify each transaction in the block
+        for transaction in &block.transactions {
+            self.validate_transaction(transaction)?;
+        }
+
+        // Check if the block's hash is valid
+        if block.hash != block.calculate_hash() {
+            return Err("Invalid block hash".to_string());
+        }
+
+        Ok(())
+    }
+
+    // Validate a transaction
+    pub fn validate_transaction(&self, _transaction: &Transaction) -> Result<(), String> {
+        // Check if the sender has sufficient balance
+        // TODO: Implement balance checking logic
+        
+        // Verify the transaction signature
+        // TODO: Implement signature verification logic
+
+        Ok(())
+    }
+
+    // Add a transaction to the pending transactions
+    pub fn add_transaction(&mut self, transaction: Transaction) {
+        self.pending_transactions.push(transaction);
+    }
+
+    // Get the latest block in the chain
+    pub fn get_latest_block(&self) -> Option<&Block> {
+        self.chain.last()
+    }
+
+    // Check if the entire blockchain is valid
+    pub fn is_chain_valid(&self) -> bool {
+        for i in 1..self.chain.len() {
+            let current_block = &self.chain[i];
+            let previous_block = &self.chain[i - 1];
+
+            if current_block.hash != current_block.calculate_hash() {
+                return false;
+            }
+
+            if current_block.previous_hash != previous_block.hash {
+                return false;
+            }
+        }
+        true
+    }
+
+    // Store a smart contract
+    pub fn store_smart_contract(&mut self, contract: SmartContract) -> Result<(), String> {
+        self.smart_contracts.insert(contract.id.clone(), contract);
+        Ok(())
+    }
+
+    // Get a smart contract by its ID
+    pub fn get_smart_contract(&self, id: &str) -> Option<&SmartContract> {
+        self.smart_contracts.get(id)
+    }
+
+    // Update a smart contract
+    pub fn update_smart_contract(&mut self, id: &str, updated_contract: SmartContract) -> Result<(), String> {
+        self.smart_contracts.insert(id.to_string(), updated_contract);
+        Ok(())
+    }
+
+    // Remove a smart contract
+    pub fn remove_smart_contract(&mut self, id: &str) -> Result<(), String> {
+        self.smart_contracts.remove(id);
+        Ok(())
+    }
+
+    // Deploy a new smart contract
+    pub fn deploy_smart_contract(&mut self, contract: SmartContract) -> Result<(), String> {
+        if self.smart_contracts.contains_key(&contract.id) {
+            return Err("Smart contract with this ID already exists".to_string());
+        }
+        self.smart_contracts.insert(contract.id.clone(), contract);
+        Ok(())
+    }
+
+    // Execute all smart contracts in the latest block
+    pub fn execute_smart_contracts(&mut self) -> Result<(), String> {
+        let block = self.chain.last_mut().ok_or("No blocks found")?;
+        let transactions = block.transactions.clone();
+        for transaction in transactions {
+            if let Some(ref contract) = transaction.smart_contract {
+                let result = contract.execute(&mut self.execution_environment)?;
+                block.add_smart_contract_result(contract.id.clone(), result, transaction.gas_limit);
+            }
+        }
+        Ok(())
+    }
+
+    // Select a proposer for the next block based on reputation
+    pub fn select_proposer(&self) -> Option<String> {
+        let total_reputation: f64 = self.consensus.members.values().map(|member| member.reputation).sum();
+        let mut rng = thread_rng();
+        let selection_point: f64 = Uniform::new(0.0, total_reputation).sample(&mut rng);
+        
+        let mut cumulative_reputation = 0.0;
+        for member in self.consensus.members.values() {
+            cumulative_reputation += member.reputation;
+            if cumulative_reputation >= selection_point {
+                return Some(member.id.clone());
+            }
+        }
+
+        None
+    }
+}
+===== END OF src/blockchain/blockchain.rs =====
+
+===== START OF src/blockchain/block.rs =====
+use crate::blockchain::Transaction;
+use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
+
+// Struct representing a block in the blockchain
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Block {
+    pub index: u64,                                // Index of the block in the chain
+    pub timestamp: i64,                            // Timestamp when the block was created
+    pub transactions: Vec<Transaction>,            // List of transactions in the block
+    pub previous_hash: String,                     // Hash of the previous block in the chain
+    pub hash: String,                              // Hash of the current block
+    pub nonce: u64,                                // Nonce used for mining the block
+    pub gas_used: u64,                             // Total gas used by smart contracts in the block
+    pub smart_contract_results: HashMap<String, String>, // Results of smart contract executions
+}
+
+impl Block {
+    // Create a new block
+    pub fn new(index: u64, transactions: Vec<Transaction>, previous_hash: String) -> Self {
+        let timestamp = chrono::Utc::now().timestamp();
+        let mut block = Block {
+            index,
+            timestamp,
+            transactions,
+            previous_hash,
+            hash: String::new(),
+            nonce: 0,
+            gas_used: 0,
+            smart_contract_results: HashMap::new(),
+        };
+        block.hash = block.calculate_hash();
+        block
+    }
+
+    // Calculate the hash of the block
+    pub fn calculate_hash(&self) -> String {
+        // Implement hash calculation logic
+        "dummy_hash".to_string()
+    }
+
+    // Add the result of a smart contract execution to the block
+    pub fn add_smart_contract_result(&mut self, contract_id: String, result: String, gas_used: u64) {
+        self.smart_contract_results.insert(contract_id, result);
+        self.gas_used += gas_used;
+    }
+}
+===== END OF src/blockchain/block.rs =====
+
+===== START OF src/blockchain/mod.rs =====
+// Filename: src/blockchain/mod.rs
+
+// =================================================
+// Overview
+// =================================================
+// This module groups and re-exports the components of the blockchain module.
+// It includes the block, transaction, and blockchain functionality.
+
+// =================================================
+// Imports and Module Declarations
+// =================================================
+
+mod block; // Import the block module
+mod transaction; // Import the transaction module
+mod blockchain; // Import the blockchain module
+
+// Re-export the block, transaction, and blockchain structs for external use
+pub use block::Block;
+pub use transaction::Transaction;
+pub use blockchain::Blockchain;
+===== END OF src/blockchain/mod.rs =====
+
+===== START OF src/blockchain/transaction.rs =====
+// src/blockchain/transaction.rs
+
+use serde::{Deserialize, Serialize};
+use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
+use crate::smart_contract::SmartContract;
+use crate::currency::CurrencyType;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)] // Added PartialEq
+pub struct Transaction {
+    pub from: String,
+    pub to: String,
+    pub amount: f64,
+    pub currency_type: CurrencyType,
+    pub gas_limit: u64,
+    pub smart_contract: Option<SmartContract>,
+    pub signature: Option<Vec<u8>>, // Changed to Vec<u8>
+    pub public_key: Option<Vec<u8>>, // Added public_key field
+}
+
+impl Transaction {
+    pub fn new(from: String, to: String, amount: f64, currency_type: CurrencyType, gas_limit: u64) -> Self {
+        Transaction {
+            from,
+            to,
+            amount,
+            currency_type,
+            gas_limit,
+            smart_contract: None,
+            signature: None,
+            public_key: None,
+        }
+    }
+
+    pub fn sign(&mut self, keypair: &Keypair) -> Result<(), String> {
+        let message = self.to_bytes();
+        let signature = keypair.sign(&message);
+        self.signature = Some(signature.to_bytes().to_vec());
+        self.public_key = Some(keypair.public.to_bytes().to_vec());
+        Ok(())
+    }
+
+    pub fn verify(&self, public_key: &PublicKey) -> Result<bool, String> {
+        let message = self.to_bytes();
+        let signature_bytes = self.signature.as_ref().ok_or("No signature present")?;
+        let signature = Signature::from_bytes(signature_bytes).map_err(|e| e.to_string())?;
+        Ok(public_key.verify(&message, &signature).is_ok())
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        format!("{}{}{}{:?}{}", self.from, self.to, self.amount, self.currency_type, self.gas_limit).into_bytes()
+    }
+}
+===== END OF src/blockchain/transaction.rs =====
+
+===== START OF src/blockchain/transaction_validator.rs =====
+// Filename: src/blockchain/transaction_validator.rs
+
+use crate::blockchain::{Transaction, Blockchain};
+
+// Struct to validate transactions
+pub struct TransactionValidator;
+
+impl TransactionValidator {
+    // Function to validate a transaction
+    pub fn validate_transaction(transaction: &Transaction, blockchain: &Blockchain) -> bool {
+        if !Self::is_double_spend(transaction, blockchain) &&
+           Self::validate_currency_and_amount(transaction) &&
+           Self::check_sufficient_balance(transaction, blockchain) {
+            true
+        } else {
+            false
+        }
+    }
+
+    // Function to check for double spending
+    fn is_double_spend(_transaction: &Transaction, _blockchain: &Blockchain) -> bool {
+        // TODO: Implement double spend check
+        false
+    }
+
+    // Function to validate the currency and amount of a transaction
+    fn validate_currency_and_amount(transaction: &Transaction) -> bool {
+        transaction.amount > 0.0
+    }
+
+    // Function to check if the sender has sufficient balance for the transaction
+    fn check_sufficient_balance(_transaction: &Transaction, _blockchain: &Blockchain) -> bool {
+        // TODO: Implement balance check
+        true
+    }
+}===== END OF src/blockchain/transaction_validator.rs =====
+
+===== START OF src/cli.rs =====
+// ===============================================
+// Command Line Interface (CLI) for ICN Node
+// ===============================================
+// This file defines the command line interface for interacting with the ICN Node.
+// It provides options for deploying and executing smart contracts, and viewing blockchain state.
+//
+// Key concepts:
+// - User Interaction: Allows users to interact with the ICN Node through a CLI.
+// - Smart Contract Management: Provides functionalities to deploy and execute smart contracts.
+// - Blockchain State Viewing: Allows users to view the current state of the blockchain.
+
+use crate::blockchain::Blockchain;
+use crate::smart_contract::parse_contract;
+use std::io::{self, Write};
+
+/// Runs the command-line interface for the ICN Node.
+/// # Arguments
+/// * `blockchain` - A mutable reference to the Blockchain instance.
+pub fn run_cli(blockchain: &mut Blockchain) {
+    loop {
+        print_menu();
+        let choice = get_user_input("Enter your choice: ");
+
+        match choice.trim() {
+            "1" => deploy_contract(blockchain),
+            "2" => execute_contracts(blockchain),
+            "3" => view_blockchain_state(blockchain),
+            "4" => break,
+            _ => println!("Invalid choice. Please try again."),
+        }
+    }
+}
+
+/// Prints the menu options for the CLI.
+fn print_menu() {
+    println!("\n--- Smart Contract CLI ---");
+    println!("1. Deploy a new smart contract");
+    println!("2. Execute smart contracts");
+    println!("3. View blockchain state");
+    println!("4. Exit");
+}
+
+/// Retrieves user input from the command line.
+/// # Arguments
+/// * `prompt` - A prompt message to display to the user.
+/// # Returns
+/// The user's input as a string.
+fn get_user_input(prompt: &str) -> String {
+    print!("{}", prompt);
+    io::stdout().flush().unwrap();
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
+    input
+}
+
+/// Deploys a smart contract to the blockchain.
+/// # Arguments
+/// * `blockchain` - A mutable reference to the Blockchain instance.
+fn deploy_contract(blockchain: &mut Blockchain) {
+    println!("Enter the smart contract details (type 'END' on a new line when finished):");
+    let mut contract_input = String::new();
+    loop {
+        let line = get_user_input("");
+        if line.trim() == "END" {
+            break;
+        }
+        contract_input.push_str(&line);
+    }
+
+    match parse_contract(&contract_input) {
+        Ok(mut contract) => {
+            contract.activate(); // Activate the contract before deployment
+            match blockchain.deploy_smart_contract(contract) {
+                Ok(_) => println!("Smart contract deployed successfully!"),
+                Err(e) => println!("Failed to deploy smart contract: {}", e),
+            }
+        }
+        Err(e) => println!("Failed to parse smart contract: {}", e),
+    }
+}
+
+/// Executes smart contracts on the blockchain.
+/// # Arguments
+/// * `blockchain` - A mutable reference to the Blockchain instance.
+fn execute_contracts(blockchain: &mut Blockchain) {
+    match blockchain.execute_smart_contracts() {
+        Ok(_) => println!("Smart contracts executed successfully!"),
+        Err(e) => println!("Failed to execute smart contracts: {}", e),
+    }
+}
+
+/// Views the current state of the blockchain.
+/// # Arguments
+/// * `blockchain` - A reference to the Blockchain instance.
+fn view_blockchain_state(blockchain: &Blockchain) {
+    println!("Blockchain state:");
+    println!("Number of blocks: {}", blockchain.chain.len());
+    println!("Latest block smart contract results: {}", blockchain.chain.last().unwrap().smart_contract_results.len());
+    // Add more state information as needed
+}
+===== END OF src/cli.rs =====
+
+===== START OF src/consensus/consensus.rs =====
+use chrono::{DateTime, Utc};
+use rand::distributions::{Distribution, Uniform};
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+
+// Constants
+const DECAY_RATE: f64 = 0.1; // The rate at which reputation decays over time
+
+// Struct representing a member in the consensus mechanism
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Member {
+    pub id: String,               // Unique identifier for the member
+    pub reputation: f64,          // Reputation score of the member
+    pub last_decay: DateTime<Utc>, // Timestamp of the last reputation decay
+}
+
+// Struct representing the consensus mechanism
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct Consensus {
+    pub members: HashMap<String, Member>, // List of members in the consensus mechanism
+}
+
+impl Consensus {
+    // Create a new Consensus instance
+    pub fn new() -> Self {
+        Consensus {
+            members: HashMap::new(),
+        }
+    }
+
+    // Add a new member to the consensus mechanism
+    pub fn add_member(&mut self, id: String) {
+        self.members.insert(
+            id.clone(),
+            Member {
+                id,
+                reputation: 1.0, // Default reputation
+                last_decay: Utc::now(),
+            },
+        );
+    }
+
+    // Update the reputation of a member
+    pub fn update_reputation(&mut self, id: &str, change: f64) {
+        if let Some(member) = self.members.get_mut(id) {
+            member.reputation += change;
+        }
+    }
+
+    // Get the reputation of a member
+    pub fn get_reputation(&self, id: &str) -> Option<f64> {
+        self.members.get(id).map(|member| member.reputation)
+    }
+
+    // Select a proposer for the next block based on reputation
+    pub fn select_proposer(&self) -> Option<String> {
+        let total_reputation: f64 = self.members.values().map(|member| member.reputation).sum();
+        let mut rng = rand::thread_rng();
+        let selection_point: f64 = Uniform::new(0.0, total_reputation).sample(&mut rng);
+        
+        let mut cumulative_reputation = 0.0;
+        for member in self.members.values() {
+            cumulative_reputation += member.reputation;
+            if cumulative_reputation >= selection_point {
+                return Some(member.id.clone());
+            }
+        }
+
+        None
+    }
+
+    // Decay the reputation of all members over time
+    pub fn decay_reputation(&mut self) {
+        let now = Utc::now();
+        for member in self.members.values_mut() {
+            let duration = now.signed_duration_since(member.last_decay).num_seconds() as f64;
+            member.reputation *= (1.0 - DECAY_RATE).powf(duration);
+            member.last_decay = now;
+        }
+    }
+
+    // Validate a block based on consensus rules
+    pub fn validate_block(&self, _block_index: u64) -> bool {
+        // TODO: Implement validation logic based on consensus rules
+        true
+    }
+}
+
+// Proof of Contribution (PoC) consensus mechanism
+pub struct PoCConsensus {
+    pub consensus: Consensus,
+    pub min_reputation: f64,
+    pub vote_threshold: f64,
+}
+
+impl PoCConsensus {
+    pub fn new(min_reputation: f64, vote_threshold: f64) -> Self {
+        PoCConsensus {
+            consensus: Consensus::new(),
+            min_reputation,
+            vote_threshold,
+        }
+    }
+
+    // Additional PoC-specific methods can be added here
+}
+===== END OF src/consensus/consensus.rs =====
+
+===== START OF src/consensus/mod.rs =====
+mod consensus;
+
+pub use consensus::{Consensus, PoCConsensus};
+===== END OF src/consensus/mod.rs =====
+
+===== START OF src/currency/currency.rs =====
+// Filename: src/currency/currency.rs
+
+// ===============================================
+// Currency System Implementation
+// ===============================================
+// This file implements a comprehensive multi-currency system for our blockchain.
+// It defines various types of currencies, their properties, and mechanisms for
+// managing them. The system supports a diverse economy with different types of
+// value representation, from basic needs to luxury goods and custom currencies.
+
+// ===============================================
+// Imports
+// ===============================================
+// These imports provide necessary functionality for our currency system:
+// - chrono: For handling dates and times
+// - std::collections::HashMap: For storing key-value pairs efficiently
+// - serde: For serializing and deserializing data structures
+// - std::fmt: For custom formatting of our types
+use chrono::{DateTime, Utc};
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use std::fmt;
+
+// ===============================================
+// CurrencyType Enum
+// ===============================================
+// This enum represents the different types of currencies in our system.
+// Each variant corresponds to a specific economic sector or purpose.
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub enum CurrencyType {
+    BasicNeeds,     // For essential goods and services (e.g., food, water)
+    Education,      // For educational services and resources
+    Environmental,  // For environmental initiatives and projects
+    Community,      // For community projects and services
+    Volunteer,      // For volunteer services and recognition
+    Storage,        // For data storage services
+    Processing,     // For computational power and services
+    Energy,         // For energy resources and trading
+    Luxury,         // For non-essential, high-end goods and services
+    Service,        // For general services not covered by other categories
+    Custom(String), // For user-defined currencies with custom names
+}
+
+// Implementation of the Display trait for CurrencyType
+// This allows us to easily convert CurrencyType to a string representation
+impl fmt::Display for CurrencyType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CurrencyType::Custom(name) => write!(f, "Custom({})", name),
+            _ => write!(f, "{:?}", self),
+        }
+    }
+}
+
+// ===============================================
+// Currency Struct
+// ===============================================
+// This struct represents a single currency in our system, containing
+// all relevant information about its supply, creation, and issuance.
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Currency {
+    pub currency_type: CurrencyType, // The type of this currency
+    pub total_supply: f64,           // The total amount of this currency in circulation
+    pub creation_date: DateTime<Utc>, // When this currency was first created
+    pub last_issuance: DateTime<Utc>, // When new units were last issued
+    pub issuance_rate: f64,           // The rate at which new units are issued
+}
+
+// Implementation of methods for the Currency struct
+impl Currency {
+    // Create a new Currency instance with the given parameters
+    pub fn new(currency_type: CurrencyType, initial_supply: f64, issuance_rate: f64) -> Self {
+        let now = Utc::now();
+        Currency {
+            currency_type,
+            total_supply: initial_supply,
+            creation_date: now,
+            last_issuance: now,
+            issuance_rate,
+        }
+    }
+
+    // Mint (create) new currency units and add them to the total supply
+    pub fn mint(&mut self, amount: f64) {
+        self.total_supply += amount;
+        self.last_issuance = Utc::now();
+    }
+
+    // Burn (destroy) currency units, reducing the total supply
+    pub fn burn(&mut self, amount: f64) -> Result<(), String> {
+        if amount > self.total_supply {
+            return Err("Insufficient supply to burn".to_string());
+        }
+        self.total_supply -= amount;
+        Ok(())
+    }
+}
+
+// ===============================================
+// CurrencySystem Struct
+// ===============================================
+// This struct manages all currencies in our system, providing methods
+// for creating, retrieving, and managing multiple currencies.
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CurrencySystem {
+    pub currencies: HashMap<CurrencyType, Currency>, // Stores all currencies in the system
+}
+
+// Implementation of methods for the CurrencySystem struct
+impl CurrencySystem {
+    // Create a new CurrencySystem and initialize it with default currencies
+    pub fn new() -> Self {
+        let mut system = CurrencySystem {
+            currencies: HashMap::new(),
+        };
+        
+        // Initialize default currencies with initial supply and issuance rates
+        system.add_currency(CurrencyType::BasicNeeds, 1_000_000.0, 0.01);
+        system.add_currency(CurrencyType::Education, 500_000.0, 0.005);
+        system.add_currency(CurrencyType::Environmental, 750_000.0, 0.008);
+        system.add_currency(CurrencyType::Community, 250_000.0, 0.003);
+        system.add_currency(CurrencyType::Volunteer, 100_000.0, 0.002);
+        system.add_currency(CurrencyType::Storage, 1_000_000.0, 0.01);
+        system.add_currency(CurrencyType::Processing, 500_000.0, 0.005);
+        system.add_currency(CurrencyType::Energy, 750_000.0, 0.008);
+        system.add_currency(CurrencyType::Luxury, 100_000.0, 0.001);
+        system.add_currency(CurrencyType::Service, 200_000.0, 0.004);
+
+        system
+    }
+
+    // Add a new currency to the system
+    pub fn add_currency(&mut self, currency_type: CurrencyType, initial_supply: f64, issuance_rate: f64) {
+        let currency = Currency::new(currency_type.clone(), initial_supply, issuance_rate);
+        self.currencies.insert(currency_type, currency);
+    }
+
+    // Get a reference to a currency in the system
+    pub fn get_currency(&self, currency_type: &CurrencyType) -> Option<&Currency> {
+        self.currencies.get(currency_type)
+    }
+
+    // Get a mutable reference to a currency in the system
+    pub fn get_currency_mut(&mut self, currency_type: &CurrencyType) -> Option<&mut Currency> {
+        self.currencies.get_mut(currency_type)
+    }
+
+    // Create a custom currency and add it to the system
+    pub fn create_custom_currency(&mut self, name: String, initial_supply: f64, issuance_rate: f64) -> Result<(), String> {
+        let currency_type = CurrencyType::Custom(name.clone());
+        if self.currencies.contains_key(&currency_type) {
+            return Err(format!("Currency '{}' already exists", name));
+        }
+        self.add_currency(currency_type, initial_supply, issuance_rate);
+        Ok(())
+    }
+
+    // Perform adaptive issuance for all currencies in the system
+    pub fn adaptive_issuance(&mut self) {
+        let now = Utc::now();
+        for currency in self.currencies.values_mut() {
+            let time_since_last_issuance = now.signed_duration_since(currency.last_issuance);
+            let issuance_amount = currency.total_supply * currency.issuance_rate * time_since_last_issuance.num_milliseconds() as f64 / 86_400_000.0; // Daily rate
+            currency.mint(issuance_amount);
+            currency.last_issuance = now;
+        }
+    }
+
+    // Print the total supply of each currency in the system
+    pub fn print_currency_supplies(&self) {
+        println!("Currency Supplies:");
+        for (currency_type, currency) in &self.currencies {
+            println!("{:?}: {}", currency_type, currency.total_supply);
+        }
+    }
+}
+
+// ===============================================
+// Wallet Struct
+// ===============================================
+// This struct represents a user's wallet, capable of holding multiple currencies
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Wallet {
+    balances: HashMap<CurrencyType, f64>, // Stores the balance for each currency type
+}
+
+// Implementation of methods for the Wallet struct
+impl Wallet {
+    // Create a new, empty wallet
+    pub fn new() -> Self {
+        Wallet {
+            balances: HashMap::new(),
+        }
+    }
+
+    // Deposit a specific amount of a currency into the wallet
+    pub fn deposit(&mut self, currency_type: CurrencyType, amount: f64) {
+        *self.balances.entry(currency_type).or_insert(0.0) += amount;
+    }
+
+    // Withdraw a specific amount of a currency from the wallet
+    pub fn withdraw(&mut self, currency_type: CurrencyType, amount: f64) -> Result<(), String> {
+        let balance = self.balances.entry(currency_type.clone()).or_insert(0.0);
+        if *balance < amount {
+            return Err(format!("Insufficient balance for {:?}", currency_type));
+        }
+        *balance -= amount;
+        Ok(())
+    }
+
+    // Get the balance of a specific currency in the wallet
+    pub fn get_balance(&self, currency_type: &CurrencyType) -> f64 {
+        *self.balances.get(currency_type).unwrap_or(&0.0)
+    }
+
+    // Print the balances of all currencies in the wallet
+    pub fn print_balances(&self) {
+        println!("Wallet Balances:");
+        for (currency_type, balance) in &self.balances {
+            println!("{:?}: {}", currency_type, balance);
+        }
+    }
+}
+
+// ===============================================
+// Unit Tests
+// ===============================================
+// These tests verify the correct functionality of our currency system
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    #[test]
+    fn test_currency_system() {
+        let mut system = CurrencySystem::new();
+        assert_eq!(system.currencies.len(), 10); // 10 default currencies
+
+        system.create_custom_currency("TestCoin".to_string(), 1000.0, 0.01).unwrap();
+        assert_eq!(system.currencies.len(), 11);
+
+        let test_coin = system.get_currency(&CurrencyType::Custom("TestCoin".to_string())).unwrap();
+        assert_eq!(test_coin.total_supply, 1000.0);
+
+        // Sleep for a short duration to allow for issuance
+        sleep(Duration::from_millis(10));
+
+        system.adaptive_issuance();
+        
+        // Check if the supply has increased, even if by a small amount
+        let basic_needs_supply = system.get_currency(&CurrencyType::BasicNeeds).unwrap().total_supply;
+        assert!(basic_needs_supply > 1_000_000.0);
+
+        // Print currency supplies
+        system.print_currency_supplies();
+    }
+
+    #[test]
+    fn test_wallet() {
+        let mut wallet = Wallet::new();
+
+        wallet.deposit(CurrencyType::BasicNeeds, 500.0);
+        assert_eq!(wallet.get_balance(&CurrencyType::BasicNeeds), 500.0);
+
+        wallet.withdraw(CurrencyType::BasicNeeds, 200.0).unwrap();
+        assert_eq!(wallet.get_balance(&CurrencyType::BasicNeeds), 300.0);
+
+        assert!(wallet.withdraw(CurrencyType::BasicNeeds, 400.0).is_err());
+
+        // Print wallet balances
+        wallet.print_balances();
+    }
+}
+
+// ===============================================
+// End of File
+// ===============================================
+// This concludes the implementation of our currency system. It provides
+// a flexible and extensible framework for managing multiple currencies
+// within our blockchain ecosystem.
+===== END OF src/currency/currency.rs =====
+
+===== START OF src/currency/mod.rs =====
+// Filename: src/currency/mod.rs
+
+mod currency;
+pub use currency::{CurrencyType, Currency, CurrencySystem, Wallet};===== END OF src/currency/mod.rs =====
+
+===== START OF src/governance/democracy.rs =====
+// Filename: src/democracy.rs
+
+// ==================================================
+// Imports
+// ==================================================
+use std::collections::HashMap;
+use chrono::{DateTime, Utc, Duration};
+use serde::{Serialize, Deserialize};
+use crate::blockchain::Blockchain;
+
+// ==================================================
+// Enums and Structs for the Democratic System
+// ==================================================
+
+// Enum to represent different categories of proposals
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum ProposalCategory {
+    Constitutional,
+    Economic,
+    Technical,
+}
+
+// Enum to represent the status of a proposal
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum ProposalStatus {
+    Active,      // Proposal is currently being voted on
+    Passed,      // Proposal has been approved by the required quorum
+    Rejected,    // Proposal did not pass the voting process
+    Implemented, // Proposal has been executed and its changes are in effect
+}
+
+// Enum to represent the type of a proposal
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum ProposalType {
+    Constitutional,    // Changes to the constitution or fundamental rules
+    EconomicAdjustment, // Adjustments to economic policies
+    NetworkUpgrade,     // Upgrades to the network or protocol
+}
+
+// Struct to represent a proposal
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Proposal {
+    pub id: String,                  // Unique identifier for the proposal
+    pub title: String,               // Title of the proposal
+    pub description: String,         // Detailed description of the proposal
+    pub proposer: String,            // The person or entity proposing the change
+    pub created_at: DateTime<Utc>,   // Timestamp when the proposal was created
+    pub voting_ends_at: DateTime<Utc>, // Timestamp when the voting period ends
+    pub status: ProposalStatus,      // Current status of the proposal
+    pub proposal_type: ProposalType, // Type of the proposal
+    pub category: ProposalCategory,  // Category of the proposal
+    pub required_quorum: f64,        // The required quorum for the proposal to pass
+    pub execution_timestamp: Option<DateTime<Utc>>, // When the proposal should be executed if passed
+}
+
+// Struct to represent a vote
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Vote {
+    pub voter: String,            // Unique identifier for the voter
+    pub proposal_id: String,      // The proposal being voted on
+    pub in_favor: bool,           // True if the vote is in favor, false otherwise
+    pub weight: f64,              // Weight of the vote (could represent the voter's influence)
+    pub timestamp: DateTime<Utc>, // Timestamp when the vote was cast
+}
+
+// Trait for executable proposals, allowing certain proposals to trigger changes in the blockchain
+pub trait ExecutableProposal {
+    fn execute(&self, blockchain: &mut Blockchain) -> Result<(), String>;
+}
+
+// Struct to represent a parameter change proposal
+pub struct ParameterChangeProposal {
+    pub parameter_name: String, // Name of the parameter to be changed
+    pub new_value: String,      // New value for the parameter
+}
+
+// Implementation of the ExecutableProposal trait for ParameterChangeProposal
+impl ExecutableProposal for ParameterChangeProposal {
+    fn execute(&self, _blockchain: &mut Blockchain) -> Result<(), String> {
+        // Implementation for changing a blockchain parameter
+        // This is a placeholder and should be implemented based on your specific blockchain structure
+        println!("Changing parameter {} to {}", self.parameter_name, self.new_value);
+        Ok(())
+    }
+}
+
+// Struct to represent the democratic system
+pub struct DemocraticSystem {
+    proposals: HashMap<String, Proposal>,                 // Map of proposal IDs to proposals
+    votes: HashMap<String, Vec<Vote>>,                    // Map of proposal IDs to lists of votes
+    executable_proposals: HashMap<String, Box<dyn ExecutableProposal>>, // Map of proposal IDs to executable proposals
+}
+
+// Implementation of the DemocraticSystem
+impl DemocraticSystem {
+    // Constructor for creating a new DemocraticSystem
+    pub fn new() -> Self {
+        DemocraticSystem {
+            proposals: HashMap::new(),
+            votes: HashMap::new(),
+            executable_proposals: HashMap::new(),
+        }
+    }
+
+    // Function to create a proposal
+    pub fn create_proposal(
+        &mut self, 
+        title: String, 
+        description: String, 
+        proposer: String, 
+        voting_duration: Duration, 
+        proposal_type: ProposalType,
+        category: ProposalCategory, 
+        required_quorum: f64, 
+        execution_timestamp: Option<DateTime<Utc>>
+    ) -> String {
+        let id = format!("prop_{}", Utc::now().timestamp());
+        let proposal = Proposal {
+            id: id.clone(),
+            title,
+            description,
+            proposer,
+            created_at: Utc::now(),
+            voting_ends_at: Utc::now() + voting_duration,
+            status: ProposalStatus::Active,
+            proposal_type,
+            category,
+            required_quorum,
+            execution_timestamp,
+        };
+        self.proposals.insert(id.clone(), proposal);
+        id
+    }
+
+    // Function to vote on a proposal
+    pub fn vote(
+        &mut self, 
+        voter: String, 
+        proposal_id: String, 
+        in_favor: bool, 
+        weight: f64
+    ) -> Result<(), String> {
+        let proposal = self.proposals.get(&proposal_id).ok_or("Proposal not found")?;
+        
+        if proposal.status != ProposalStatus::Active {
+            return Err("Voting is not active for this proposal".to_string());
+        }
+
+        if Utc::now() > proposal.voting_ends_at {
+            return Err("Voting period has ended".to_string());
+        }
+
+        let vote = Vote {
+            voter,
+            proposal_id: proposal_id.clone(),
+            in_favor,
+            weight,
+            timestamp: Utc::now(),
+        };
+
+        self.votes.entry(proposal_id).or_insert_with(Vec::new).push(vote);
+        Ok(())
+    }
+
+    // Function to tally votes for a proposal
+    pub fn tally_votes(&mut self, proposal_id: &str) -> Result<(), String> {
+        let proposal = self.proposals.get_mut(proposal_id).ok_or("Proposal not found")?;
+        
+        if proposal.status != ProposalStatus::Active {
+            return Err("Proposal is not active".to_string());
+        }
+
+        if Utc::now() < proposal.voting_ends_at {
+            return Err("Voting period has not ended yet".to_string());
+        }
+
+        let votes = self.votes.get(proposal_id).ok_or("No votes found for this proposal")?;
+        
+        let total_weight: f64 = votes.iter().map(|v| v.weight).sum();
+        let weight_in_favor: f64 = votes.iter().filter(|v| v.in_favor).map(|v| v.weight).sum();
+
+        if total_weight < proposal.required_quorum {
+            proposal.status = ProposalStatus::Rejected;
+            return Ok(());
+        }
+
+        if weight_in_favor / total_weight > 0.5 {
+            proposal.status = ProposalStatus::Passed;
+        } else {
+            proposal.status = ProposalStatus::Rejected;
+        }
+
+        Ok(())
+    }
+
+    // Function to get a specific proposal
+    pub fn get_proposal(&self, proposal_id: &str) -> Option<&Proposal> {
+        self.proposals.get(proposal_id)
+    }
+
+    // Function to get the votes for a specific proposal
+    pub fn get_votes(&self, proposal_id: &str) -> Option<&Vec<Vote>> {
+        self.votes.get(proposal_id)
+    }
+
+    // Function to list all active proposals
+    pub fn list_active_proposals(&self) -> Vec<&Proposal> {
+        self.proposals.values()
+            .filter(|p| p.status == ProposalStatus::Active)
+            .collect()
+    }
+
+    // Function to mark a proposal as implemented
+    pub fn mark_as_implemented(&mut self, proposal_id: &str) -> Result<(), String> {
+        let proposal = self.proposals.get_mut(proposal_id).ok_or("Proposal not found")?;
+        
+        if proposal.status != ProposalStatus::Passed {
+            return Err("Proposal has not passed".to_string());
+        }
+
+        proposal.status = ProposalStatus::Implemented;
+        Ok(())
+    }
+
+    // Function to add an executable proposal
+    pub fn add_executable_proposal(&mut self, proposal_id: String, executable: Box<dyn ExecutableProposal>) {
+        self.executable_proposals.insert(proposal_id, executable);
+    }
+
+    // Function to execute a passed proposal
+    pub fn execute_proposal(&mut self, proposal_id: &str, blockchain: &mut Blockchain) -> Result<(), String> {
+        let proposal = self.proposals.get(proposal_id).ok_or("Proposal not found")?;
+        
+        if proposal.status != ProposalStatus::Passed {
+            return Err("Proposal has not passed".to_string());
+        }
+
+        if let Some(executable) = self.executable_proposals.get(proposal_id) {
+            executable.execute(blockchain)?;
+            self.mark_as_implemented(proposal_id)?;
+            Ok(())
+        } else {
+            Err("No executable found for this proposal".to_string())
+        }
+    }
+}
+===== END OF src/governance/democracy.rs =====
+
+===== START OF src/governance/mod.rs =====
+// src/governance/mod.rs
+
+pub mod democracy;
+
+pub use democracy::{DemocraticSystem, ProposalCategory, ProposalType};===== END OF src/governance/mod.rs =====
+
+===== START OF src/identity/did.rs =====
+// File: src/did.rs
+
+// ==================================================
+// Imports
+// ==================================================
+use chrono::{DateTime, Utc};
+use ed25519_dalek::{Keypair, PublicKey, Signature, Verifier};
+use rand::rngs::OsRng;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+// ==================================================
+// Enums and Structs for Decentralized Identity
+// ==================================================
+
+// Struct to represent a decentralized identity
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DecentralizedIdentity {
+    pub id: String,                      // Unique identifier for the DID
+    #[serde(with = "public_key_serde")]
+    pub public_key: PublicKey,           // Public key for the DID
+    pub created_at: DateTime<Utc>,       // Timestamp of creation
+    pub reputation: f64,                 // Reputation score (0 to 100)
+    pub attributes: HashMap<String, String>, // Additional attributes
+}
+
+// Module for (de)serialization of the public key
+mod public_key_serde {
+    use ed25519_dalek::PublicKey;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(public_key: &PublicKey, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let bytes = public_key.to_bytes();
+        bytes.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<PublicKey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        PublicKey::from_bytes(&bytes).map_err(serde::de::Error::custom)
+    }
+}
+
+// Implementation of DecentralizedIdentity
+impl DecentralizedIdentity {
+    // Function to create a new decentralized identity
+    pub fn new(attributes: HashMap<String, String>) -> (Self, Keypair) {
+        let mut csprng = OsRng {};
+        let keypair: Keypair = Keypair::generate(&mut csprng); // Generate a key pair
+        let public_key = keypair.public;
+
+        // Generate a unique ID based on the public key
+        let id = format!("did:icn:{}", hex::encode(public_key.to_bytes()));
+
+        // Return the new identity and the key pair
+        (
+            Self {
+                id,
+                public_key,
+                created_at: Utc::now(),
+                reputation: 1.0, // Initial reputation
+                attributes,
+            },
+            keypair,
+        )
+    }
+
+    // Function to verify a signature
+    pub fn verify_signature(&self, message: &[u8], signature: &Signature) -> bool {
+        self.public_key.verify(message, signature).is_ok()
+    }
+}
+
+// ==================================================
+// Struct to Manage Decentralized Identities
+// ==================================================
+
+// Struct to manage decentralized identities
+pub struct DidManager {
+    identities: HashMap<String, DecentralizedIdentity>, // Map of DIDs to their identities
+}
+
+// Implementation of DidManager
+impl DidManager {
+    // Constructor to create a new DidManager
+    pub fn new() -> Self {
+        Self {
+            identities: HashMap::new(),
+        }
+    }
+
+    // Function to register a decentralized identity
+    pub fn register_did(&mut self, did: DecentralizedIdentity) -> Result<(), String> {
+        if self.identities.contains_key(&did.id) {
+            return Err("DiD already exists".to_string());
+        }
+        self.identities.insert(did.id.clone(), did);
+        Ok(())
+    }
+
+    // Function to get a decentralized identity by ID
+    pub fn get_did(&self, id: &str) -> Option<&DecentralizedIdentity> {
+        self.identities.get(id)
+    }
+
+    // Function to update the reputation of a decentralized identity
+    pub fn update_reputation(&mut self, id: &str, delta: f64) -> Result<(), String> {
+        let did = self.identities.get_mut(id).ok_or("DiD not found")?;
+        did.reputation += delta;
+        did.reputation = did.reputation.max(0.0).min(100.0); // Clamp reputation between 0 and 100
+        Ok(())
+    }
+
+    // Function to verify the identity of a decentralized identity
+    pub fn verify_identity(&self, id: &str, message: &[u8], signature: &Signature) -> bool {
+        if let Some(did) = self.identities.get(id) {
+            did.verify_signature(message, signature)
+        } else {
+            false
+        }
+    }
+
+    // Function to update the attributes of a decentralized identity
+    pub fn update_attributes(&mut self, id: &str, attributes: HashMap<String, String>) -> Result<(), String> {
+        let did = self.identities.get_mut(id).ok_or("DiD not found")?;
+        did.attributes.extend(attributes);
+        Ok(())
+    }
+
+    // Function to revoke a decentralized identity
+    pub fn revoke_did(&mut self, id: &str) -> Result<(), String> {
+        if self.identities.remove(id).is_some() {
+            Ok(())
+        } else {
+            Err("DiD not found".to_string())
+        }
+    }
+
+    // Function to list all decentralized identities
+    pub fn list_dids(&self) -> Vec<String> {
+        self.identities.keys().cloned().collect()
+    }
+}
+
+// ==================================================
+// Unit Tests for Decentralized Identity
+// ==================================================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::Signer;
+
+    #[test]
+    fn test_did_creation_and_verification() {
+        let mut attributes = HashMap::new();
+        attributes.insert("name".to_string(), "Alice".to_string());
+        let (did, keypair) = DecentralizedIdentity::new(attributes);
+
+        assert!(did.id.starts_with("did:icn:"));
+        assert_eq!(did.attributes.get("name"), Some(&"Alice".to_string()));
+
+        let message = b"Hello, World!";
+        let signature = keypair.sign(message);
+
+        assert!(did.verify_signature(message, &signature));
+    }
+
+    #[test]
+    fn test_did_manager() {
+        let mut manager = DidManager::new();
+
+        let mut attributes = HashMap::new();
+        attributes.insert("name".to_string(), "Bob".to_string());
+        let (did, _) = DecentralizedIdentity::new(attributes);
+
+        assert!(manager.register_did(did.clone()).is_ok());
+        assert!(manager.register_did(did.clone()).is_err());
+
+        let retrieved_did = manager.get_did(&did.id).unwrap();
+        assert_eq!(retrieved_did.attributes.get("name"), Some(&"Bob".to_string()));
+
+        assert!(manager.update_reputation(&did.id, 5.0).is_ok());
+        let updated_did = manager.get_did(&did.id).unwrap();
+        assert_eq!(updated_did.reputation, 6.0);
+
+        let mut new_attributes = HashMap::new();
+        new_attributes.insert("age".to_string(), "30".to_string());
+        assert!(manager.update_attributes(&did.id, new_attributes).is_ok());
+
+        let final_did = manager.get_did(&did.id).unwrap();
+        assert_eq!(final_did.attributes.get("age"), Some(&"30".to_string()));
+
+        assert!(manager.revoke_did(&did.id).is_ok());
+        assert!(manager.get_did(&did.id).is_none());
+    }
+}
+===== END OF src/identity/did.rs =====
+
+===== START OF src/identity/mod.rs =====
+// src/identity/mod.rs
+
+pub mod did;
+
+pub use did::{DecentralizedIdentity, DidManager};===== END OF src/identity/mod.rs =====
+
+===== START OF src/lib.rs =====
+use std::sync::{Arc, Mutex};
+use std::error::Error;
+
+pub mod blockchain;
+pub mod consensus;
+pub mod currency;
+pub mod governance;
+pub mod identity;
+pub mod network;
+pub mod node;
+pub mod smart_contract;
+pub mod vm;
+pub mod sharding; // New module
+
+pub use blockchain::{Block, Transaction, Blockchain};
+pub use consensus::PoCConsensus;
+pub use currency::{CurrencyType, CurrencySystem, Wallet};
+pub use governance::{DemocraticSystem, ProposalCategory, ProposalType};
+pub use identity::{DecentralizedIdentity, DidManager};
+pub use network::{Node, Network, Packet, PacketType};
+pub use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
+pub use smart_contract::{SmartContract, ExecutionEnvironment};
+pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
+pub use sharding::ShardingManager; // New export
+
+/// The main struct representing an ICN Node.
+/// It contains the content store, PIT, FIB, blockchain, and CoopVM.
+pub struct IcnNode {
+    pub content_store: Arc<Mutex<ContentStore>>,
+    pub pit: Arc<Mutex<PendingInterestTable>>,
+    pub fib: Arc<Mutex<ForwardingInformationBase>>,
+    pub blockchain: Arc<Mutex<Blockchain>>,
+    pub coop_vm: Arc<Mutex<CoopVM>>,
+    pub sharding_manager: Arc<Mutex<ShardingManager>>, // New field
+}
+
+impl IcnNode {
+    /// Creates a new instance of the ICN Node.
+    pub fn new() -> Self {
+        let blockchain = Blockchain::new();
+        let coop_vm = CoopVM::new(Vec::new()); // Initialize with empty program
+        let sharding_manager = ShardingManager::new(4, 10); // Initialize with 4 shards, 10 nodes per shard
+
+        IcnNode {
+            content_store: Arc::new(Mutex::new(ContentStore::new())),
+            pit: Arc::new(Mutex::new(PendingInterestTable::new())),
+            fib: Arc::new(Mutex::new(ForwardingInformationBase::new())),
+            blockchain: Arc::new(Mutex::new(blockchain)),
+            coop_vm: Arc::new(Mutex::new(coop_vm)),
+            sharding_manager: Arc::new(Mutex::new(sharding_manager)),
+        }
+    }
+
+    /// Processes a packet, either an interest or a data packet.
+    /// # Arguments
+    /// * `packet` - The packet to be processed.
+    /// # Returns
+    /// Result indicating success or failure.
+    pub fn process_packet(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        match packet.packet_type {
+            PacketType::Interest => self.process_interest(packet),
+            PacketType::Data => self.process_data(packet),
+        }
+    }
+
+    /// Processes an interest packet by checking the content store and PIT.
+    /// # Arguments
+    /// * `packet` - The interest packet to be processed.
+    /// # Returns
+    /// Result indicating success or failure.
+    fn process_interest(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        let content = self.content_store.lock().unwrap().get(&packet.name);
+
+        if let Some(_data) = content {
+            println!("Sending data for interest: {}", packet.name);
+            Ok(())
+        } else {
+            self.pit.lock().unwrap().add_interest(packet.name.clone(), "default_interface");
+            println!("Forwarding interest for: {}", packet.name);
+            Err(format!("Content '{}' not found", packet.name).into())
+        }
+    }
+
+    /// Processes a data packet by storing it in the content store and satisfying any pending interests.
+    /// # Arguments
+    /// * `packet` - The data packet to be processed.
+    /// # Returns
+    /// Result indicating success or failure.
+    fn process_data(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        self.content_store.lock().unwrap().add(packet.name.clone(), packet.content.clone());
+
+        if let Some(_interfaces) = self.pit.lock().unwrap().get_incoming_interfaces(&packet.name) {
+            println!("Satisfying pending interests for data: {}", packet.name);
+        }
+        Ok(())
+    }
+
+    /// Executes a smart contract by compiling it and running it on the CoopVM.
+    /// # Arguments
+    /// * `contract` - The smart contract code as a string.
+    /// # Returns
+    /// Result indicating success or failure.
+    pub fn execute_smart_contract(&self, contract: String) -> Result<(), Box<dyn Error>> {
+        let mut coop_vm = self.coop_vm.lock().unwrap();
+        let opcodes = self.compile_contract(&contract)?;
+        coop_vm.load_program(opcodes);
+        coop_vm.run()?;
+        Ok(())
+    }
+
+    /// Compiles a smart contract from CSCL code to opcodes.
+    /// # Arguments
+    /// * `contract` - The smart contract code as a string.
+    /// # Returns
+    /// A vector of opcodes representing the compiled contract.
+    fn compile_contract(&self, contract: &str) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        let mut compiler = CSCLCompiler::new(contract);
+        compiler.compile()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_icn_node_creation() {
+        let node = IcnNode::new();
+        assert!(node.content_store.lock().unwrap().is_empty());
+        assert!(node.pit.lock().unwrap().is_empty());
+        assert!(node.fib.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_packet_processing() {
+        let node = IcnNode::new();
+
+        let interest_packet = Packet {
+            packet_type: PacketType::Interest,
+            name: "test_data".to_string(),
+            content: vec![],
+        };
+
+        assert!(node.process_packet(interest_packet.clone()).is_err());
+
+        let data_packet = Packet {
+            packet_type: PacketType::Data,
+            name: "test_data".to_string(),
+            content: vec![1, 2, 3],
+        };
+
+        assert!(node.process_packet(data_packet).is_ok());
+
+        let interest_packet = Packet {
+            packet_type: PacketType::Interest,
+            name: "test_data".to_string(),
+            content: vec![],
+        };
+
+        assert!(node.process_packet(interest_packet).is_ok());
+    }
+}===== END OF src/lib.rs =====
+
+===== START OF src/main.rs =====
+use icn_node::{
+    IcnNode, CSCLCompiler, Blockchain, Transaction, PoCConsensus, DemocraticSystem,
+    ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, CurrencyType, Node,
+};
+use icn_node::network::network::NodeType;
+use chrono::Utc;
+use std::collections::HashMap;
+
+fn main() {
+    // Initialize the ICN Node with all its components
+    let _node = IcnNode::new();
+    
+    // Initialize the blockchain
+    let mut blockchain = Blockchain::new();
+
+    // Set up the Proof of Contribution consensus mechanism
+    let mut consensus = PoCConsensus::new(0.5, 0.66);
+
+    // Set up the democratic system for governance
+    let mut democratic_system = DemocraticSystem::new();
+
+    // Initialize the network
+    let mut network = Network::new();
+
+    // Add initial members to the consensus mechanism
+    consensus.consensus.add_member("Alice".to_string());
+    consensus.consensus.add_member("Bob".to_string());
+    consensus.consensus.add_member("Charlie".to_string());
+
+    // Create decentralized identities for participants
+    let (alice_did, _) = DecentralizedIdentity::new(HashMap::new());
+    let (bob_did, _) = DecentralizedIdentity::new(HashMap::new());
+
+    // Add initial transactions to the blockchain
+    let tx1 = Transaction::new(
+        alice_did.id.clone(),
+        bob_did.id.clone(),
+        100.0,
+        CurrencyType::BasicNeeds,
+        1000,
+    );
+    blockchain.add_transaction(tx1);
+
+    // Create a block containing the initial transactions
+    if let Err(e) = blockchain.create_block("Alice".to_string()) {
+        println!("Error creating block: {}", e);
+    }
+
+    // Create a proposal for the democratic system
+    let proposal_id = democratic_system.create_proposal(
+        "Community Garden".to_string(),
+        "Create a community garden in the local park".to_string(),
+        "Alice".to_string(),
+        chrono::Duration::weeks(1), // 1 week voting period
+        ProposalType::Constitutional,
+        ProposalCategory::Economic,
+        0.51, // 51% quorum
+        Some(Utc::now() + chrono::Duration::days(30)), // Execute in 30 days if passed
+    );
+
+    // Participants vote on the proposal
+    if let Err(e) = democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0) {
+        println!("Error voting on proposal: {}", e);
+    }
+    if let Err(e) = democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0) {
+        println!("Error voting on proposal: {}", e);
+    }
+
+    // Tally votes for the proposal
+    if let Err(e) = democratic_system.tally_votes(&proposal_id) {
+        println!("Error tallying votes: {}", e);
+    }
+
+    // Example usage of CSCL compiler
+  let cscl_code = r#"
+    x = 100 + 50;
+    y = 200 - 25;
+    z = x * y / 10;
+    emit("Result", z);
+"#;
+
+    let mut compiler = CSCLCompiler::new(cscl_code);
+    match compiler.compile() {
+        Ok(opcodes) => {
+            println!("Compiled CSCL code into {} opcodes", opcodes.len());
+
+            // Print all compiled opcodes
+            for (i, opcode) in opcodes.iter().enumerate() {
+                println!("Opcode {}: {:?}", i, opcode);
+            }
+
+            // Create a CoopVM instance and execute the compiled code
+            let mut coop_vm = CoopVM::new(opcodes);
+            match coop_vm.run() {
+                Ok(_) => println!("CoopVM execution completed successfully"),
+                Err(e) => println!("CoopVM execution failed: {}", e),
+            }
+
+            // Print the final state of the CoopVM
+            println!("CoopVM final state:");
+            println!("Stack: {:?}", coop_vm.get_stack());
+            println!("Memory: {:?}", coop_vm.get_memory());
+        },
+        Err(e) => println!("Compilation failed: {}", e),
+    }
+
+    // Simulate some network activity
+    let node1 = Node::new("Node1", NodeType::PersonalDevice, "127.0.0.1:8000");
+    let node2 = Node::new("Node2", NodeType::PersonalDevice, "127.0.0.1:8001");
+    network.add_node(node1.clone());
+    network.add_node(node2.clone());
+
+    // Broadcast the latest block
+    if let Some(latest_block) = blockchain.get_latest_block() {
+        network.broadcast_block(&latest_block);
+    } else {
+        println!("No blocks in the blockchain to broadcast");
+    }
+
+    // Print final blockchain state
+    println!("Blockchain state:");
+    println!("Number of blocks: {}", blockchain.chain.len());
+    if let Some(latest_block) = blockchain.get_latest_block() {
+        println!("Latest block hash: {}", latest_block.hash);
+    } else {
+        println!("No blocks in the blockchain");
+    }
+
+    // Print consensus state
+    println!("Consensus state:");
+    println!("Number of members: {}", consensus.consensus.members.len());
+    println!("Current vote threshold: {}", consensus.vote_threshold);
+
+    // Print democratic system state
+    println!("Democratic system state:");
+    println!("Number of active proposals: {}", democratic_system.list_active_proposals().len());
+    
+    println!("ICN Node simulation completed.");
+}===== END OF src/main.rs =====
+
+===== START OF src/mod.rs =====
+// Filename: src/mod.rs
+
+// Top-level module declarations
+pub mod blockchain;
+pub mod consensus;
+pub mod currency;
+pub mod governance;
+pub mod identity;
+pub mod network;
+pub mod node;
+pub mod smart_contract;
+pub mod tests;
+pub mod vm;
+pub mod cli;
+pub mod lib; // This is not typically necessary but included here for completeness
+pub mod main; // This is not typically necessary but included here for completeness
+===== END OF src/mod.rs =====
+
+===== START OF src/network/data_packet.rs =====
+===== END OF src/network/data_packet.rs =====
+
+===== START OF src/network/interest_packet.rs =====
+pub struct InterestPacket {
+    pub name: String,
+}
+===== END OF src/network/interest_packet.rs =====
+
+===== START OF src/network/mod.rs =====
+// src/network/mod.rs
+
+pub mod network;
+pub mod packet;
+
+pub use network::{Node, Network};
+pub use packet::{Packet, PacketType};===== END OF src/network/mod.rs =====
+
+===== START OF src/network/network.rs =====
+// File: src/network.rs
+
+// ===============================================
+// Network Node and Communication Infrastructure
+// ===============================================
+// This file contains the core structures and functions for managing network nodes
+// and facilitating communication within our blockchain network. It includes
+// definitions for different types of nodes, methods for adding and removing nodes,
+// and functions for broadcasting information across the network.
+//
+// Key concepts:
+// - Node Types: Different roles nodes can play in the network (e.g., personal devices, cooperative servers)
+// - Network Topology: How nodes are connected and communicate with each other
+// - Broadcasting: The process of sharing information (like new blocks) across the entire network
+
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use crate::blockchain::Block;
+
+// ===============================================
+// Node Type Enum
+// ===============================================
+// This enum represents the different types of nodes that can exist in our network.
+// Each type of node may have different capabilities and responsibilities.
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum NodeType {
+    PersonalDevice,    // Lightweight nodes typically run on personal computers or smartphones
+    CooperativeServer, // More powerful nodes that might be run by cooperative organizations
+    GovernmentServer,  // Nodes operated by governmental entities, potentially with special privileges
+}
+
+// ===============================================
+// Node Struct
+// ===============================================
+// The Node struct represents a single node in our network. Each node has a unique
+// identifier, a type, and a network address.
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Node {
+    pub id: String,      // Unique identifier for the node
+    pub node_type: NodeType, // The type of the node (personal, cooperative, government)
+    pub address: String, // Network address of the node (e.g., IP address or URL)
+}
+
+impl Node {
+    // Create a new node with the given parameters
+    //
+    // Parameters:
+    // - id: A unique identifier for the node
+    // - node_type: The type of the node (PersonalDevice, CooperativeServer, or GovernmentServer)
+    // - address: The network address where the node can be reached
+    //
+    // Returns: A new Node instance
+    pub fn new(id: &str, node_type: NodeType, address: &str) -> Self {
+        Node {
+            id: id.to_string(),
+            node_type,
+            address: address.to_string(),
+        }
+    }
+}
+
+// ===============================================
+// Network Struct
+// ===============================================
+// The Network struct manages the collection of nodes in our blockchain network.
+// It provides methods for adding and removing nodes, as well as broadcasting
+// information to all nodes in the network.
+
+pub struct Network {
+    nodes: HashMap<String, Node>, // A map of node IDs to Node instances
+}
+
+impl Network {
+    // Create a new, empty network
+    //
+    // Returns: A new Network instance with no nodes
+    pub fn new() -> Self {
+        Network {
+            nodes: HashMap::new(),
+        }
+    }
+
+    // Add a node to the network
+    //
+    // Parameters:
+    // - node: The Node instance to add to the network
+    //
+    // This method will overwrite any existing node with the same ID
+    pub fn add_node(&mut self, node: Node) {
+        self.nodes.insert(node.id.clone(), node);
+    }
+
+    // Remove a node from the network
+    //
+    // Parameters:
+    // - node_id: The ID of the node to remove
+    //
+    // If the node doesn't exist, this method does nothing
+    pub fn remove_node(&mut self, node_id: &str) {
+        self.nodes.remove(node_id);
+    }
+
+    // Get a reference to a node in the network
+    //
+    // Parameters:
+    // - node_id: The ID of the node to retrieve
+    //
+    // Returns: An Option containing a reference to the Node if found, or None if not found
+    pub fn get_node(&self, node_id: &str) -> Option<&Node> {
+        self.nodes.get(node_id)
+    }
+
+    // Broadcast a block to all nodes in the network
+    //
+    // Parameters:
+    // - block: The Block to broadcast to all nodes
+    //
+    // In a real implementation, this method would send the block to all nodes.
+    // For now, it just prints a message indicating the broadcast.
+    pub fn broadcast_block(&self, block: &Block) {
+        println!("Broadcasting block {} to all nodes", block.index);
+        // In a real implementation, we would iterate through all nodes and send the block:
+        // for node in self.nodes.values() {
+        //     send_block_to_node(node, block);
+        // }
+    }
+
+    // Synchronize the blockchain across all nodes in the network
+    //
+    // Parameters:
+    // - blockchain: The current state of the blockchain to synchronize
+    //
+    // In a real implementation, this method would ensure all nodes have the same blockchain state.
+    // For now, it just prints a message indicating the synchronization.
+    pub fn synchronize_blockchain(&self, _blockchain: &[Block]) {
+        println!("Synchronizing blockchain across all nodes");
+        // In a real implementation, we would:
+        // 1. Determine the longest valid chain among all nodes
+        // 2. Update any nodes with shorter chains to match the longest chain
+        // 3. Resolve any conflicts or forks in the blockchain
+    }
+}
+
+// ===============================================
+// Helper Functions
+// ===============================================
+
+// In a real implementation, we would have helper functions for network operations, such as:
+//
+// fn send_block_to_node(node: &Node, block: &Block) {
+//     // Implementation to send a block to a specific node
+// }
+//
+// fn request_blockchain_from_node(node: &Node) -> Vec<Block> {
+//     // Implementation to request the full blockchain from a specific node
+// }
+
+// ===============================================
+// Tests
+// ===============================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_network_operations() {
+        let mut network = Network::new();
+
+        // Test adding nodes
+        let node1 = Node::new("node1", NodeType::PersonalDevice, "192.168.1.1");
+        let node2 = Node::new("node2", NodeType::CooperativeServer, "192.168.1.2");
+        network.add_node(node1.clone());
+        network.add_node(node2.clone());
+
+        assert_eq!(network.nodes.len(), 2);
+
+        // Test getting a node
+        let retrieved_node = network.get_node("node1").unwrap();
+        assert_eq!(retrieved_node.id, "node1");
+        assert_eq!(retrieved_node.address, "192.168.1.1");
+
+        // Test removing a node
+        network.remove_node("node1");
+        assert_eq!(network.nodes.len(), 1);
+        assert!(network.get_node("node1").is_none());
+
+        // Test broadcasting (this just checks that it doesn't panic)
+        let block = Block {
+            index: 1,
+            timestamp: 0,
+            transactions: vec![],
+            previous_hash: "previous_hash".to_string(),
+            hash: "hash".to_string(),
+            nonce: 0,
+            gas_used: 0,
+            smart_contract_results: HashMap::new(),
+        };
+        network.broadcast_block(&block);
+
+        // Test synchronization (this just checks that it doesn't panic)
+        network.synchronize_blockchain(&vec![block]);
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum PacketType {
+    Interest,
+    Data,
+}
+
+#[derive(Clone, Debug)]
+pub struct Packet {
+    pub packet_type: PacketType,
+    pub name: String,
+    pub content: Vec<u8>,
+}
+===== END OF src/network/network.rs =====
+
+===== START OF src/network/packet.rs =====
+#[derive(Clone, Debug)]
+pub enum PacketType {
+    Interest,
+    Data,
+}
+
+#[derive(Clone, Debug)]
+pub struct Packet {
+    pub packet_type: PacketType,
+    pub name: String,
+    pub content: Vec<u8>,
+}===== END OF src/network/packet.rs =====
+
+===== START OF src/node/content_store.rs =====
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
+const MAX_CACHE_SIZE: usize = 1000;
+const DEFAULT_TTL: Duration = Duration::from_secs(3600);
+
+struct CacheEntry {
+    content: Vec<u8>,
+    timestamp: Instant,
+    ttl: Duration,
+}
+
+pub struct ContentStore {
+    cache: HashMap<String, CacheEntry>,
+}
+
+impl ContentStore {
+    pub fn new() -> Self {
+        ContentStore {
+            cache: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, name: String, content: Vec<u8>) {
+        self.cache.insert(name, CacheEntry {
+            content,
+            timestamp: Instant::now(),
+            ttl: DEFAULT_TTL,
+        });
+
+        if self.cache.len() > MAX_CACHE_SIZE {
+            self.evict_oldest();
+        }
+    }
+
+    pub fn get(&mut self, name: &str) -> Option<Vec<u8>> {
+        if let Some(entry) = self.cache.get(name) {
+            if entry.timestamp.elapsed() < entry.ttl {
+                Some(entry.content.clone())
+            } else {
+                self.cache.remove(name);
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn set_ttl(&mut self, name: &str, ttl: Duration) {
+        if let Some(entry) = self.cache.get_mut(name) {
+            entry.ttl = ttl;
+        }
+    }
+
+    pub fn clear_expired(&mut self) {
+        self.cache.retain(|_, entry| entry.timestamp.elapsed() < entry.ttl);
+    }
+
+    fn evict_oldest(&mut self) {
+        if let Some(oldest) = self.cache.iter()
+            .min_by_key(|(_, entry)| entry.timestamp)
+            .map(|(k, _)| k.clone()) {
+            self.cache.remove(&oldest);
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.cache.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_content_store() {
+        let mut cs = ContentStore::new();
+        let content = vec![1, 2, 3, 4];
+        cs.add("test".to_string(), content.clone());
+
+        assert_eq!(cs.get("test"), Some(content));
+        assert_eq!(cs.get("nonexistent"), None);
+
+        cs.set_ttl("test", Duration::from_secs(1));
+        std::thread::sleep(Duration::from_secs(2));
+        assert_eq!(cs.get("test"), None);
+
+        cs.add("test2".to_string(), vec![5, 6, 7, 8]);
+        cs.set_ttl("test2", Duration::from_secs(10));
+        cs.clear_expired();
+        assert_eq!(cs.get("test2"), Some(vec![5, 6, 7, 8]));
+    }
+}
+===== END OF src/node/content_store.rs =====
+
+===== START OF src/node/fib.rs =====
+use std::collections::HashMap;
+use std::net::SocketAddr;
+
+/// Represents an entry in the Forwarding Information Base (FIB).
+#[derive(Debug, Clone)]
+pub struct FibEntry {
+    pub name: String,           // The name of the content or prefix.
+    pub next_hops: Vec<SocketAddr>, // The list of next hop addresses.
+}
+
+impl FibEntry {
+    /// Creates a new FIB entry with a given name and initial next hop.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - A string representing the name or prefix.
+    /// * `next_hop` - A `SocketAddr` representing the initial next hop address.
+    ///
+    /// # Returns
+    ///
+    /// * A new `FibEntry` instance.
+    pub fn new(name: String, next_hop: SocketAddr) -> Self {
+        FibEntry {
+            name,
+            next_hops: vec![next_hop],
+        }
+    }
+
+    /// Adds a new next hop to the FIB entry if it does not already exist.
+    ///
+    /// # Arguments
+    ///
+    /// * `next_hop` - A `SocketAddr` representing the new next hop address.
+    pub fn add_next_hop(&mut self, next_hop: SocketAddr) {
+        if !self.next_hops.contains(&next_hop) {
+            self.next_hops.push(next_hop);
+        }
+    }
+
+    /// Removes an existing next hop from the FIB entry.
+    ///
+    /// # Arguments
+    ///
+    /// * `next_hop` - A reference to the `SocketAddr` to be removed.
+    pub fn remove_next_hop(&mut self, next_hop: &SocketAddr) {
+        self.next_hops.retain(|&x| x != *next_hop);
+    }
+}
+
+/// Represents the Forwarding Information Base (FIB) which stores FIB entries.
+pub struct ForwardingInformationBase {
+    entries: HashMap<String, FibEntry>, // The collection of FIB entries, indexed by name.
+}
+
+impl ForwardingInformationBase {
+    /// Creates a new, empty Forwarding Information Base.
+    ///
+    /// # Returns
+    ///
+    /// * A new `ForwardingInformationBase` instance.
+    pub fn new() -> Self {
+        ForwardingInformationBase {
+            entries: HashMap::new(),
+        }
+    }
+
+    /// Adds a new entry to the FIB or updates an existing entry with a new next hop.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - A string representing the name or prefix.
+    /// * `next_hop` - A `SocketAddr` representing the next hop address.
+    pub fn add_entry(&mut self, name: String, next_hop: SocketAddr) {
+        self.entries
+            .entry(name.clone())
+            .and_modify(|e| e.add_next_hop(next_hop))
+            .or_insert_with(|| FibEntry::new(name, next_hop));
+    }
+
+    /// Removes an entry from the FIB.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - A string representing the name or prefix to be removed.
+    pub fn remove_entry(&mut self, name: &str) {
+        self.entries.remove(name);
+    }
+
+    /// Retrieves the list of next hop addresses for a given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - A string representing the name or prefix.
+    ///
+    /// # Returns
+    ///
+    /// * An `Option` containing a reference to a vector of `SocketAddr` if the name exists, otherwise `None`.
+    pub fn get_next_hops(&self, name: &str) -> Option<&Vec<SocketAddr>> {
+        self.entries.get(name).map(|entry| &entry.next_hops)
+    }
+
+    /// Performs a longest prefix match to find the best entry for a given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - A string representing the name or prefix.
+    ///
+    /// # Returns
+    ///
+    /// * An `Option` containing a reference to the best matching `FibEntry` if found, otherwise `None`.
+    pub fn longest_prefix_match(&self, name: &str) -> Option<&FibEntry> {
+        self.entries
+            .iter()
+            .filter(|(prefix, _)| name.starts_with(*prefix))
+            .max_by_key(|(prefix, _)| prefix.len())
+            .map(|(_, entry)| entry)
+    }
+
+    /// Checks if the FIB is empty.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the FIB is empty, otherwise `false`.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fib() {
+        // Create a new Forwarding Information Base
+        let mut fib = ForwardingInformationBase::new();
+
+        // Define some socket addresses for testing
+        let addr1: SocketAddr = "127.0.0.1:8000".parse().unwrap();
+        let addr2: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+
+        // Add entries to the FIB
+        fib.add_entry("/test".to_string(), addr1);
+        fib.add_entry("/test/nested".to_string(), addr2);
+
+        // Check if the next hops are correctly added
+        assert_eq!(fib.get_next_hops("/test").unwrap().len(), 1);
+        assert_eq!(fib.get_next_hops("/test/nested").unwrap().len(), 1);
+
+        // Perform a longest prefix match
+        let longest_match = fib.longest_prefix_match("/test/nested/deep");
+        assert!(longest_match.is_some());
+        assert_eq!(longest_match.unwrap().name, "/test/nested");
+
+        // Test remove_entry
+        fib.remove_entry("/test");
+        assert!(fib.get_next_hops("/test").is_none());
+
+        // Test FibEntry methods
+        let mut entry = FibEntry::new("/example".to_string(), addr1);
+        entry.add_next_hop(addr2);
+        assert_eq!(entry.next_hops.len(), 2);
+        entry.remove_next_hop(&addr1);
+        assert_eq!(entry.next_hops.len(), 1);
+        assert_eq!(entry.next_hops[0], addr2);
+    }
+}
+===== END OF src/node/fib.rs =====
+
+===== START OF src/node/icn_node.rs =====
+// ===============================================
+// ICN Node Implementation
+// ===============================================
+// This file contains the main implementation for the ICN (InterCooperative Network) node.
+// It includes module declarations and the primary structure and functions for node operations.
+//
+// Key concepts:
+// - Modular Structure: Using Rust's module system to organize code.
+// - Node Operations: Handling packets, managing blockchain state, and executing smart contracts.
+
+pub mod blockchain;
+pub mod consensus;
+pub mod currency;
+pub mod democracy;
+pub mod did;
+pub mod network;
+pub mod node;
+pub mod smart_contract;
+pub mod vm;
+
+pub use crate::blockchain::{Block, Transaction, Blockchain};
+pub use crate::consensus::PoCConsensus;
+pub use crate::currency::{CurrencyType, CurrencySystem, Wallet};
+pub use crate::democracy::{DemocraticSystem, ProposalCategory, ProposalType};
+pub use crate::did::{DecentralizedIdentity, DidManager};
+pub use crate::network::{Node as NetworkNode, Network};
+pub use crate::node::{ContentStore, ForwardingInformationBase, Packet, PacketType, PendingInterestTable};
+pub use crate::blockchain::TransactionValidator;
+pub use crate::vm::{CoopVM, Opcode, Value, CSCLCompiler};
+
+use std::sync::{Arc, Mutex};
+use std::error::Error;
+
+/// ICN Node Structure
+///
+/// This struct represents a node in the InterCooperative Network (ICN).
+/// It holds the state for content storage, pending interest table (PIT), forwarding information base (FIB),
+/// the blockchain, and the cooperative virtual machine (CoopVM).
+///
+/// # Fields
+/// * `content_store` - Stores data packets
+/// * `pit` - Manages pending interest table for interest packets
+/// * `fib` - Manages forwarding information base for routing
+/// * `blockchain` - The blockchain state
+/// * `coop_vm` - The cooperative virtual machine for executing smart contracts
+pub struct ICNNode {
+    pub content_store: Arc<Mutex<ContentStore>>,
+    pub pit: Arc<Mutex<PendingInterestTable>>,
+    pub fib: Arc<Mutex<ForwardingInformationBase>>,
+    pub blockchain: Arc<Mutex<Blockchain>>,
+    pub coop_vm: Arc<Mutex<CoopVM>>,
+}
+
+impl ICNNode {
+    /// Creates a new ICN Node
+    ///
+    /// This function initializes a new ICN node with the provided blockchain and cooperative VM instances.
+    ///
+    /// # Arguments
+    /// * `blockchain` - The initial blockchain state
+    /// * `coop_vm` - The initial cooperative VM instance
+    ///
+    /// # Returns
+    /// A new instance of `ICNNode`
+    pub fn new(blockchain: Blockchain, coop_vm: CoopVM) -> Self {
+        Self {
+            content_store: Arc::new(Mutex::new(ContentStore::new())),
+            pit: Arc::new(Mutex::new(PendingInterestTable::new())),
+            fib: Arc::new(Mutex::new(ForwardingInformationBase::new())),
+            blockchain: Arc::new(Mutex::new(blockchain)),
+            coop_vm: Arc::new(Mutex::new(coop_vm)),
+        }
+    }
+
+    /// Processes an incoming packet
+    ///
+    /// This function processes different types of packets by delegating to the appropriate handler.
+    ///
+    /// # Arguments
+    /// * `packet` - The packet to be processed
+    ///
+    /// # Returns
+    /// A result indicating success or failure
+    ///
+    /// # Errors
+    /// This function will return an error if the packet processing fails.
+    pub fn process_packet(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        match packet.packet_type {
+            PacketType::Interest => self.process_interest(packet),
+            PacketType::Data => self.process_data(packet),
+        }
+    }
+
+    /// Processes an interest packet
+    ///
+    /// Interest packets request specific data from the network. This function handles those requests.
+    ///
+    /// # Arguments
+    /// * `packet` - The interest packet to be processed
+    ///
+    /// # Returns
+    /// A result indicating success or failure
+    ///
+    /// # Errors
+    /// This function will return an error if processing the interest packet fails.
+    fn process_interest(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        // Logic to process interest packets
+        Ok(())
+    }
+
+    /// Processes a data packet
+    ///
+    /// Data packets contain the requested information. This function handles those packets.
+    ///
+    /// # Arguments
+    /// * `packet` - The data packet to be processed
+    ///
+    /// # Returns
+    /// A result indicating success or failure
+    ///
+    /// # Errors
+    /// This function will return an error if processing the data packet fails.
+    fn process_data(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        // Logic to process data packets
+        Ok(())
+    }
+
+    /// Executes a smart contract
+    ///
+    /// This function executes a given smart contract using the cooperative VM.
+    ///
+    /// # Arguments
+    /// * `contract` - The smart contract to be executed
+    ///
+    /// # Returns
+    /// A result indicating success or failure
+    ///
+    /// # Errors
+    /// This function will return an error if executing the smart contract fails.
+    pub fn execute_smart_contract(&self, contract: String) -> Result<(), Box<dyn Error>> {
+        // Logic to execute smart contract
+        Ok(())
+    }
+
+    /// Compiles a smart contract
+    ///
+    /// This function compiles a smart contract string into a sequence of opcodes.
+    ///
+    /// # Arguments
+    /// * `contract` - The smart contract code as a string
+    ///
+    /// # Returns
+    /// A vector of opcodes representing the compiled contract
+    ///
+    /// # Errors
+    /// This function will return an error if compiling the contract fails.
+    fn compile_contract(&self, contract: &str) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        // Logic to compile contract
+        Ok(vec![])
+    }
+}
+===== END OF src/node/icn_node.rs =====
+
+===== START OF src/node/mod.rs =====
+// src/node/mod.rs
+
+pub mod content_store;
+pub mod fib;
+pub mod pending_interest_table;
+
+pub use content_store::ContentStore;
+pub use fib::ForwardingInformationBase;
+pub use pending_interest_table::PendingInterestTable;===== END OF src/node/mod.rs =====
+
+===== START OF src/node/node.rs =====
+// ===============================================
+// Content Store, FIB, and PIT Implementation
+// ===============================================
+// This file defines the structures and methods for the Content Store, Forwarding Information Base (FIB),
+// and Pending Interest Table (PIT) used in the ICN Node.
+//
+// Key concepts:
+// - Content Store: A cache for storing data packets temporarily.
+// - Forwarding Information Base (FIB): A table that stores routing information for named data.
+// - Pending Interest Table (PIT): A table that keeps track of interests that have been forwarded but not yet satisfied.
+
+use std::collections::HashMap;
+
+/// A struct representing a packet in the ICN Node.
+#[derive(Clone)]
+pub struct Packet {
+    pub packet_type: PacketType,
+    pub name: String,
+    pub content: Vec<u8>,
+}
+
+/// Enum representing the type of a packet, either Interest or Data.
+#[derive(Clone)]
+pub enum PacketType {
+    Interest,
+    Data,
+}
+
+/// A struct representing the Content Store.
+pub struct ContentStore {
+    store: HashMap<String, Vec<u8>>,
+}
+
+impl ContentStore {
+    /// Creates a new Content Store.
+    pub fn new() -> Self {
+        ContentStore {
+            store: HashMap::new(),
+        }
+    }
+
+    /// Inserts data into the Content Store.
+    /// # Arguments
+    /// * `name` - The name of the data.
+    /// * `content` - The content of the data.
+    pub fn insert(&mut self, name: String, content: Vec<u8>) {
+        self.store.insert(name, content);
+    }
+
+    /// Retrieves data from the Content Store.
+    /// # Arguments
+    /// * `name` - The name of the data.
+    /// # Returns
+    /// An optional reference to the content if it exists.
+    pub fn get(&self, name: &str) -> Option<&Vec<u8>> {
+        self.store.get(name)
+    }
+
+    /// Checks if the Content Store is empty.
+    /// # Returns
+    /// True if the Content Store is empty, otherwise false.
+    pub fn is_empty(&self) -> bool {
+        self.store.is_empty()
+    }
+}
+
+/// A struct representing the Forwarding Information Base (FIB).
+pub struct ForwardingInformationBase {
+    table: HashMap<String, Vec<String>>,
+}
+
+impl ForwardingInformationBase {
+    /// Creates a new FIB.
+    pub fn new() -> Self {
+        ForwardingInformationBase {
+            table: HashMap::new(),
+        }
+    }
+
+    /// Adds an entry to the FIB.
+    /// # Arguments
+    /// * `name` - The name of the data.
+    /// * `interface` - The interface to forward the data.
+    pub fn add_entry(&mut self, name: String, interface: String) {
+        self.table.entry(name).or_insert(Vec::new()).push(interface);
+    }
+
+    /// Retrieves the interfaces for a given name from the FIB.
+    /// # Arguments
+    /// * `name` - The name of the data.
+    /// # Returns
+    /// An optional reference to a vector of interfaces if they exist.
+    pub fn get_interfaces(&self, name: &str) -> Option<&Vec<String>> {
+        self.table.get(name)
+    }
+
+    /// Checks if the FIB is empty.
+    /// # Returns
+    /// True if the FIB is empty, otherwise false.
+    pub fn is_empty(&self) -> bool {
+        self.table.is_empty()
+    }
+}
+
+/// A struct representing the Pending Interest Table (PIT).
+pub struct PendingInterestTable {
+    table: HashMap<String, Vec<String>>,
+}
+
+impl PendingInterestTable {
+    /// Creates a new PIT.
+    pub fn new() -> Self {
+        PendingInterestTable {
+            table: HashMap::new(),
+        }
+    }
+
+    /// Adds an interest to the PIT.
+    /// # Arguments
+    /// * `name` - The name of the interest.
+    /// * `interface` - The interface from which the interest came.
+    pub fn add_interest(&mut self, name: String, interface: String) {
+        self.table.entry(name).or_insert(Vec::new()).push(interface);
+    }
+
+    /// Retrieves the incoming interfaces for a given name from the PIT.
+    /// # Arguments
+    /// * `name` - The name of the interest.
+    /// # Returns
+    /// An optional reference to a vector of interfaces if they exist.
+    pub fn get_incoming_interfaces(&self, name: &str) -> Option<&Vec<String>> {
+        self.table.get(name)
+    }
+
+    /// Checks if the PIT is empty.
+    /// # Returns
+    /// True if the PIT is empty, otherwise false.
+    pub fn is_empty(&self) -> bool {
+        self.table.is_empty()
+    }
+}
+===== END OF src/node/node.rs =====
+
+===== START OF src/node/pending_interest_table.rs =====
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
+const DEFAULT_INTEREST_LIFETIME: Duration = Duration::from_secs(4);
+
+struct PitEntry {
+    interfaces: Vec<String>,
+    timestamp: Instant,
+}
+
+pub struct PendingInterestTable {
+    entries: HashMap<String, PitEntry>,
+}
+
+impl PendingInterestTable {
+    pub fn new() -> Self {
+        PendingInterestTable {
+            entries: HashMap::new(),
+        }
+    }
+
+    pub fn add_interest(&mut self, name: String, interface: &str) {
+        self.entries
+            .entry(name)
+            .and_modify(|e| {
+                if !e.interfaces.contains(&interface.to_string()) {
+                    e.interfaces.push(interface.to_string());
+                }
+                e.timestamp = Instant::now();
+            })
+            .or_insert(PitEntry {
+                interfaces: vec![interface.to_string()],
+                timestamp: Instant::now(),
+            });
+    }
+
+    pub fn remove_interest(&mut self, name: &str) {
+        self.entries.remove(name);
+    }
+
+    pub fn has_pending_interest(&self, name: &str) -> bool {
+        self.entries.contains_key(name)
+    }
+
+    pub fn get_incoming_interfaces(&self, name: &str) -> Option<Vec<String>> {
+        self.entries.get(name).map(|entry| entry.interfaces.clone())
+    }
+
+    pub fn add_incoming_interface(&mut self, name: &str, interface: &str) {
+        if let Some(entry) = self.entries.get_mut(name) {
+            if !entry.interfaces.contains(&interface.to_string()) {
+                entry.interfaces.push(interface.to_string());
+            }
+        }
+    }
+
+    pub fn clear_expired(&mut self) {
+        self.entries.retain(|_, entry| entry.timestamp.elapsed() < DEFAULT_INTEREST_LIFETIME);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pending_interest_table() {
+        let mut pit = PendingInterestTable::new();
+        
+        pit.add_interest("test".to_string(), "interface1");
+        assert!(pit.has_pending_interest("test"));
+        
+        pit.add_incoming_interface("test", "interface2");
+        let interfaces = pit.get_incoming_interfaces("test").unwrap();
+        assert_eq!(interfaces.len(), 2);
+        assert!(interfaces.contains(&"interface1".to_string()));
+        assert!(interfaces.contains(&"interface2".to_string()));
+        
+        pit.remove_interest("test");
+        assert!(!pit.has_pending_interest("test"));
+
+        pit.add_interest("test_expired".to_string(), "interface1");
+        std::thread::sleep(Duration::from_secs(5));
+        pit.clear_expired();
+        assert!(!pit.has_pending_interest("test_expired"));
+    }
+}
+===== END OF src/node/pending_interest_table.rs =====
+
+===== START OF src/sharding/mod.rs =====
+// src/sharding/mod.rs
+
+use std::collections::HashMap;
+use sha2::{Sha256, Digest};
+use crate::blockchain::{Block, Transaction};
+use crate::network::Node;
+use crate::currency::CurrencyType;
+use std::sync::{Arc, Mutex};
+use ed25519_dalek::{PublicKey, Signature, Verifier};
+
+/// Represents a shard in the network
+pub struct Shard {
+    pub id: u64,
+    pub nodes: Vec<Node>,
+    pub blockchain: Vec<Block>,
+    pub balances: HashMap<String, HashMap<CurrencyType, f64>>,
+}
+
+/// Manages the sharding mechanism for the entire network
+pub struct ShardingManager {
+    shards: HashMap<u64, Arc<Mutex<Shard>>>,
+    shard_count: u64,
+    nodes_per_shard: usize,
+}
+
+impl ShardingManager {
+    /// Creates a new ShardingManager
+    pub fn new(shard_count: u64, nodes_per_shard: usize) -> Self {
+        let mut shards = HashMap::new();
+        for i in 0..shard_count {
+            shards.insert(i, Arc::new(Mutex::new(Shard {
+                id: i,
+                nodes: Vec::new(),
+                blockchain: Vec::new(),
+                balances: HashMap::new(),
+            })));
+        }
+        
+        ShardingManager {
+            shards,
+            shard_count,
+            nodes_per_shard,
+        }
+    }
+
+    /// Assigns a node to a shard
+    pub fn assign_node_to_shard(&mut self, node: Node, shard_id: u64) -> Result<(), String> {
+        let shard = self.shards.get(&shard_id).ok_or(format!("Shard {} not found", shard_id))?;
+        let mut shard = shard.lock().unwrap();
+        if shard.nodes.len() >= self.nodes_per_shard {
+            return Err(format!("Shard {} is full", shard_id));
+        }
+        shard.nodes.push(node);
+        Ok(())
+    }
+
+    /// Gets the shard for a given transaction or block
+    pub fn get_shard_for_data(&self, data: &[u8]) -> u64 {
+        let hash = self.hash_data(data);
+        hash % self.shard_count
+    }
+
+    /// Handles cross-shard communication
+    pub fn cross_shard_communication(&self, from_shard: u64, to_shard: u64, transaction: &Transaction) -> Result<(), String> {
+        let from_shard = self.shards.get(&from_shard).ok_or(format!("From shard {} not found", from_shard))?;
+        let to_shard = self.shards.get(&to_shard).ok_or(format!("To shard {} not found", to_shard))?;
+
+        let mut from_shard = from_shard.lock().unwrap();
+        let mut to_shard = to_shard.lock().unwrap();
+
+        println!("Verifying transaction in source shard: {}", from_shard.id);
+        if !self.verify_transaction(&from_shard, transaction) {
+            println!("Transaction verification failed in the source shard");
+            return Err("Transaction verification failed in the source shard".to_string());
+        }
+
+        println!("Updating balances in source shard: {}", from_shard.id);
+        if let Err(e) = self.update_balances(&mut from_shard, transaction) {
+            println!("Failed to update balances in source shard: {}", e);
+            return Err(e);
+        }
+
+        println!("Creating new block in destination shard: {}", to_shard.id);
+        let new_block = Block {
+            index: to_shard.blockchain.len() as u64,
+            timestamp: chrono::Utc::now().timestamp(),
+            transactions: vec![transaction.clone()],
+            previous_hash: to_shard.blockchain.last().map(|b| b.hash.clone()).unwrap_or_default(),
+            hash: self.calculate_block_hash(&to_shard.blockchain, transaction),
+            nonce: 0, // In a real implementation, this would be calculated
+            gas_used: 0, // This should be properly calculated
+            smart_contract_results: HashMap::new(),
+        };
+
+        to_shard.blockchain.push(new_block);
+
+        println!("Adding balances in destination shard: {}", to_shard.id);
+        if let Err(e) = self.add_balances(&mut to_shard, transaction) {
+            println!("Failed to add balances: {}", e);
+            return Err(e);
+        }
+
+        println!("Transaction moved from shard {} to shard {}", from_shard.id, to_shard.id);
+        Ok(())
+    }
+
+    fn verify_transaction(&self, shard: &Shard, transaction: &Transaction) -> bool {
+        println!("Checking balance for sender: {}", transaction.from);
+        if let Some(sender_balances) = shard.balances.get(&transaction.from) {
+            if let Some(balance) = sender_balances.get(&transaction.currency_type) {
+                if *balance < transaction.amount {
+                    println!("Insufficient balance for sender: {}", transaction.from);
+                    return false; // Insufficient balance
+                }
+            } else {
+                println!("Sender does not have the required currency type");
+                return false; // Sender doesn't have the required currency type
+            }
+        } else {
+            println!("Sender not found in this shard");
+            return false; // Sender not found in this shard
+        }
+
+        println!("Verifying transaction signature");
+        if let (Some(public_key), Some(signature)) = (&transaction.public_key, &transaction.signature) {
+            let public_key = PublicKey::from_bytes(public_key).unwrap();
+            let signature = Signature::from_bytes(signature).unwrap();
+            let message = transaction.to_bytes();
+            if public_key.verify(&message, &signature).is_err() {
+                println!("Signature verification failed");
+                return false; // Signature verification failed
+            }
+        } else {
+            println!("Missing public key or signature");
+            return false; // Missing public key or signature
+        }
+
+        println!("Checking for double-spending");
+        for block in &shard.blockchain {
+            for tx in &block.transactions {
+                if tx == transaction {
+                    println!("Transaction already exists in the blockchain");
+                    return false; // Transaction already exists in the blockchain
+                }
+            }
+        }
+
+        true // All checks passed
+    }
+
+    fn update_balances(&self, shard: &mut Shard, transaction: &Transaction) -> Result<(), String> {
+        println!("Updating balances for transaction from {} to {} of amount {}", transaction.from, transaction.to, transaction.amount);
+        
+        // Deduct from sender
+        let sender_balances = shard.balances.entry(transaction.from.clone()).or_insert_with(HashMap::new);
+        let sender_balance = sender_balances.entry(transaction.currency_type.clone()).or_insert(0.0);
+        println!("Sender initial balance: {}", sender_balance);
+        if *sender_balance < transaction.amount {
+            println!("Insufficient balance for sender: {}", sender_balance);
+            return Err("Insufficient balance".to_string());
+        }
+        *sender_balance -= transaction.amount;
+        println!("Sender balance after deduction: {}", sender_balance);
+
+        Ok(())
+    }
+
+    fn add_balances(&self, shard: &mut Shard, transaction: &Transaction) -> Result<(), String> {
+        println!("Adding balances for transaction from {} to {} of amount {}", transaction.from, transaction.to, transaction.amount);
+
+        // Add to recipient
+        let recipient_balances = shard.balances.entry(transaction.to.clone()).or_insert_with(HashMap::new);
+        let recipient_balance = recipient_balances.entry(transaction.currency_type.clone()).or_insert(0.0);
+        println!("Recipient initial balance: {}", recipient_balance);
+        *recipient_balance += transaction.amount;
+        println!("Recipient balance after addition: {}", recipient_balance);
+
+        Ok(())
+    }
+
+    fn calculate_block_hash(&self, blockchain: &[Block], transaction: &Transaction) -> String {
+        let mut hasher = Sha256::new();
+        if let Some(last_block) = blockchain.last() {
+            hasher.update(&last_block.hash);
+        }
+        hasher.update(transaction.to_bytes());
+        let result = hasher.finalize();
+        hex::encode(result)
+    }
+
+    fn hash_data(&self, data: &[u8]) -> u64 {
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        let result = hasher.finalize();
+        
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&result[..8]);
+        u64::from_be_bytes(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::network::Node;
+    use crate::network::network::NodeType;
+    use crate::currency::CurrencyType;
+    use ed25519_dalek::{Keypair, Signer};
+
+    #[test]
+    fn test_create_sharding_manager() {
+        let manager = ShardingManager::new(4, 10);
+        assert_eq!(manager.shards.len(), 4);
+        assert_eq!(manager.shard_count, 4);
+        assert_eq!(manager.nodes_per_shard, 10);
+    }
+
+    #[test]
+    fn test_assign_node_to_shard() {
+        let mut manager = ShardingManager::new(4, 2);
+        let node1 = Node::new("node1", NodeType::PersonalDevice, "127.0.0.1:8000");
+        let node2 = Node::new("node2", NodeType::PersonalDevice, "127.0.0.1:8001");
+        let node3 = Node::new("node3", NodeType::PersonalDevice, "127.0.0.1:8002");
+        
+        assert!(manager.assign_node_to_shard(node1, 0).is_ok());
+        assert!(manager.assign_node_to_shard(node2, 0).is_ok());
+        assert!(manager.assign_node_to_shard(node3, 0).is_err()); // Shard is full
+    }
+
+    #[test]
+    fn test_get_shard_for_data() {
+        let manager = ShardingManager::new(4, 10);
+        let data1 = b"Transaction1";
+        let data2 = b"Transaction2";
+        assert!(manager.get_shard_for_data(data1) < 4);
+        assert!(manager.get_shard_for_data(data2) < 4);
+    }
+
+    #[test]
+    fn test_hash_data_distribution() {
+        let manager = ShardingManager::new(4, 10);
+        let mut shard_counts = [0; 4];
+        
+        for i in 0..10000 {
+            let data = format!("Test data {}", i).into_bytes();
+            let shard = manager.get_shard_for_data(&data);
+            shard_counts[shard as usize] += 1;
+        }
+        
+        for count in shard_counts.iter() {
+            assert!(*count > 2000 && *count < 3000);
+        }
+    }
+
+    #[test]
+    fn test_cross_shard_communication() {
+        let mut manager = ShardingManager::new(2, 10);
+        let node1 = Node::new("node1", NodeType::PersonalDevice, "127.0.0.1:8000");
+        let node2 = Node::new("node2", NodeType::PersonalDevice, "127.0.0.1:8001");
+        
+        manager.assign_node_to_shard(node1, 0).unwrap();
+        manager.assign_node_to_shard(node2, 1).unwrap();
+
+        let mut csprng = rand::rngs::OsRng{};
+        let keypair: Keypair = Keypair::generate(&mut csprng);
+
+        let mut transaction = Transaction::new(
+            "Alice".to_string(),
+            "Bob".to_string(),
+            100.0,
+            CurrencyType::BasicNeeds,
+            1000,
+        );
+
+        let message = transaction.to_bytes();
+        let signature = keypair.sign(&message);
+        transaction.signature = Some(signature.to_bytes().to_vec());
+        transaction.public_key = Some(keypair.public.to_bytes().to_vec());
+
+        let mut shard0 = manager.shards.get(&0).unwrap().lock().unwrap(); // Added mut here
+        shard0.balances.entry("Alice".to_string()).or_insert_with(HashMap::new).insert(CurrencyType::BasicNeeds, 1000.0);
+        println!("Initial balance for Alice: {:?}", shard0.balances.get("Alice"));
+        drop(shard0);
+
+        assert!(manager.cross_shard_communication(0, 1, &transaction).is_ok());
+
+        let shard0 = manager.shards.get(&0).unwrap().lock().unwrap();
+        let shard1 = manager.shards.get(&1).unwrap().lock().unwrap();
+
+        assert_eq!(shard0.balances.get("Alice").unwrap().get(&CurrencyType::BasicNeeds), Some(&900.0));
+        assert_eq!(shard1.balances.get("Bob").unwrap().get(&CurrencyType::BasicNeeds), Some(&100.0));
+    }
+}
+===== END OF src/sharding/mod.rs =====
+
+===== START OF src/smart_contract/mod.rs =====
+mod smart_contract;
+
+pub use smart_contract::{SmartContract, ExecutionEnvironment, ContractStatus, ContractType};
+===== END OF src/smart_contract/mod.rs =====
+
+===== START OF src/smart_contract/smart_contract.rs =====
+// File: src/smart_contract/smart_contract.rs
+
+use chrono::{DateTime, Utc};
+use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
+
+// Enum representing different types of smart contracts
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ContractType {
+    AssetTransfer,
+    Proposal,
+    ServiceAgreement,
+    GovernanceVote,
+    ResourceAllocation,
+    IdentityVerification,
+    CooperativeMembership,
+    Custom(String),
+}
+
+// Enum representing the possible statuses of a smart contract
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ContractStatus {
+    Pending,    // Contract is created but not yet active
+    Active,     // Contract is currently in force
+    Completed,  // Contract has been fulfilled
+    Terminated, // Contract has been terminated before completion
+}
+
+// The main struct representing a smart contract
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SmartContract {
+    pub id: String,                // Unique identifier for the contract
+    pub contract_type: ContractType, // The type of the contract
+    pub creator: String,           // The address of the contract creator
+    pub created_at: DateTime<Utc>, // Timestamp of contract creation
+    pub content: String,           // The actual code or logic of the contract
+    pub status: ContractStatus,    // Current status of the contract
+}
+
+impl SmartContract {
+    // Activate the contract, changing its status to Active
+    pub fn activate(&mut self) {
+        self.status = ContractStatus::Active;
+    }
+
+    // Mark the contract as completed
+    pub fn complete(&mut self) {
+        self.status = ContractStatus::Completed;
+    }
+
+    // Terminate the contract prematurely
+    pub fn terminate(&mut self) {
+        self.status = ContractStatus::Terminated;
+    }
+
+    // Execute the smart contract
+    pub fn execute(&self, env: &mut ExecutionEnvironment) -> Result<String, String> {
+        // Check if the contract is active before execution
+        if self.status != ContractStatus::Active {
+            return Err(format!("Contract is not active. Current status: {:?}", self.status));
+        }
+
+        // Execute the appropriate function based on the contract type
+        match self.contract_type {
+            ContractType::AssetTransfer => self.execute_asset_transfer(env),
+            ContractType::Proposal => self.execute_proposal(env),
+            ContractType::ServiceAgreement => self.execute_service_agreement(env),
+            ContractType::GovernanceVote => self.execute_governance_vote(env),
+            ContractType::ResourceAllocation => self.execute_resource_allocation(env),
+            ContractType::IdentityVerification => self.execute_identity_verification(env),
+            ContractType::CooperativeMembership => self.execute_cooperative_membership(env),
+            ContractType::Custom(ref name) => self.execute_custom_contract(env, name),
+        }
+    }
+
+    // Specific Execution Functions for Contract Types
+    fn execute_asset_transfer(&self, env: &mut ExecutionEnvironment) -> Result<String, String> {
+        let params: AssetTransferParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse asset transfer params: {}", e))?;
+
+        // Check if the sender has sufficient balance
+        if let Some(from_balance) = env.balances.get_mut(&params.from) {
+            if let Some(amount) = from_balance.get_mut(&params.asset) {
+                if *amount >= params.amount {
+                    // Deduct from sender
+                    *amount -= params.amount;
+                    // Add to recipient
+                    env.balances
+                        .entry(params.to.clone())
+                        .or_insert_with(HashMap::new)
+                        .entry(params.asset.clone())
+                        .and_modify(|e| *e += params.amount)
+                        .or_insert(params.amount);
+                    return Ok("Asset transfer successful".to_string());
+                } else {
+                    return Err("Insufficient balance".to_string());
+                }
+            } else {
+                return Err("Asset not found in sender's balance".to_string());
+            }
+        } else {
+            return Err("Sender not found".to_string());
+        }
+    }
+
+    fn execute_proposal(&self, env: &mut ExecutionEnvironment) -> Result<String, String> {
+        let params: ProposalParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse proposal params: {}", e))?;
+
+        env.proposals.insert(self.id.clone(), params);
+        Ok("Proposal added".to_string())
+    }
+
+    fn execute_service_agreement(&self, env: &mut ExecutionEnvironment) -> Result<String, String> {
+        let params: ServiceAgreementParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse service agreement params: {}", e))?;
+
+        env.service_agreements.insert(self.id.clone(), params);
+        Ok("Service agreement added".to_string())
+    }
+
+    fn execute_governance_vote(&self, env: &mut ExecutionEnvironment) -> Result<String, String> {
+        let params: GovernanceVoteParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse governance vote params: {}", e))?;
+
+        env.votes.entry(params.proposal_id)
+            .or_insert_with(Vec::new)
+            .push((params.voter, params.vote));
+        Ok("Vote recorded".to_string())
+    }
+
+    fn execute_resource_allocation(&self, env: &mut ExecutionEnvironment) -> Result<String, String> {
+        let params: ResourceAllocationParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse resource allocation params: {}", e))?;
+
+        env.resource_allocations.insert(self.id.clone(), params);
+        Ok("Resource allocation added".to_string())
+    }
+
+    fn execute_identity_verification(&self, env: &mut ExecutionEnvironment) -> Result<String, String> {
+        let params: IdentityVerificationParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse identity verification params: {}", e))?;
+
+        env.identities.insert(params.user_id.clone(), params);
+        Ok("Identity verified".to_string())
+    }
+
+    fn execute_cooperative_membership(&self, env: &mut ExecutionEnvironment) -> Result<String, String> {
+        let params: CooperativeMembershipParams = serde_json::from_str(&self.content)
+            .map_err(|e| format!("Failed to parse cooperative membership params: {}", e))?;
+
+        env.memberships.insert(params.user_id.clone(), params);
+        Ok("Cooperative membership added".to_string())
+    }
+
+    fn execute_custom_contract(&self, env: &mut ExecutionEnvironment, name: &str) -> Result<String, String> {
+        env.custom_contracts.insert(self.id.clone(), (name.to_string(), self.content.clone()));
+        Ok("Custom contract executed".to_string())
+    }
+}
+
+// The ExecutionEnvironment struct represents the context in which smart contracts are executed
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionEnvironment {
+    pub balances: HashMap<String, HashMap<String, f64>>, // User balances by asset type
+    pub proposals: HashMap<String, ProposalParams>, // Active proposals
+    pub service_agreements: HashMap<String, ServiceAgreementParams>, // Active service agreements
+    pub resource_allocations: HashMap<String, ResourceAllocationParams>, // Resource allocations
+    pub identities: HashMap<String, IdentityVerificationParams>, // Verified identities
+    pub memberships: HashMap<String, CooperativeMembershipParams>, // Cooperative memberships
+    pub votes: HashMap<String, Vec<(String, bool)>>, // Votes
+    pub custom_contracts: HashMap<String, (String, String)>, // Custom contracts
+}
+
+impl ExecutionEnvironment {
+    // Create a new ExecutionEnvironment
+    pub fn new() -> Self {
+        ExecutionEnvironment {
+            balances: HashMap::new(),
+            proposals: HashMap::new(),
+            service_agreements: HashMap::new(),
+            resource_allocations: HashMap::new(),
+            identities: HashMap::new(),
+            memberships: HashMap::new(),
+            votes: HashMap::new(),
+            custom_contracts: HashMap::new(),
+        }
+    }
+
+    // Add balance to a user's account
+    pub fn add_balance(&mut self, user: &str, asset: &str, amount: f64) {
+        self.balances
+            .entry(user.to_string())
+            .or_insert_with(HashMap::new)
+            .entry(asset.to_string())
+            .and_modify(|e| *e += amount)
+            .or_insert(amount);
+    }
+
+    // Get the balance of a user's account
+    pub fn get_balance(&self, user: &str, asset: &str) -> f64 {
+        self.balances
+            .get(user)
+            .and_then(|assets| assets.get(asset))
+            .cloned()
+            .unwrap_or(0.0)
+    }
+
+    // Tally votes for a proposal
+    pub fn tally_votes(&self, proposal_id: &str) -> (usize, usize) {
+        let votes = self.votes.get(proposal_id).cloned().unwrap_or_default();
+        let (approve, reject): (Vec<_>, Vec<_>) = votes.into_iter().partition(|(_, vote)| *vote);
+        (approve.len(), reject.len())
+    }
+}
+
+// Parameter Structs for Different Contract Types
+#[derive(Debug, Serialize, Deserialize)]
+struct AssetTransferParams {
+    from: String,
+    to: String,
+    asset: String,
+    amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProposalParams {
+    title: String,
+    description: String,
+    options: Vec<String>,
+    #[serde(with = "duration_serde")]
+    voting_period: std::time::Duration,
+    quorum: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GovernanceVoteParams {
+    proposal_id: String,
+    voter: String,
+    vote: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ServiceAgreementParams {
+    provider: String,
+    consumer: String,
+    service: String,
+    terms: String,
+    start_date: DateTime<Utc>,
+    end_date: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ResourceAllocationParams {
+    resource: String,
+    amount: f64,
+    recipient: String,
+    #[serde(with = "duration_serde")]
+    duration: std::time::Duration,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct IdentityVerificationParams {
+    user_id: String,
+    verification_data: String,
+    verification_method: String,
+    expiration: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CooperativeMembershipParams {
+    user_id: String,
+    membership_type: String,
+    join_date: DateTime<Utc>,
+    #[serde(with = "duration_serde")]
+    subscription_period: std::time::Duration,
+}
+
+// Utility Functions and Modules
+#[allow(dead_code)]
+pub fn parse_contract(input: &str) -> Result<SmartContract, String> {
+    serde_json::from_str(input)
+        .map_err(|e| format!("Failed to parse contract: {}", e))
+}
+
+
+
+// Module for serializing and deserializing Duration
+mod duration_serde {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(duration.as_secs())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let secs = u64::deserialize(deserializer)?;
+        Ok(Duration::from_secs(secs))
+    }
+}
+
+// Tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_contract_function() {
+        let input = r#"{
+            "id": "contract_123",
+            "contract_type": "AssetTransfer",
+            "creator": "Alice",
+            "created_at": "2023-07-01T00:00:00Z",
+            "content": "{\"from\": \"Alice\", \"to\": \"Bob\", \"asset\": \"ICN_TOKEN\", \"amount\": 100.0}",
+            "status": "Pending"
+        }"#;
+
+        let contract = parse_contract(input).expect("Failed to parse contract");
+        assert_eq!(contract.id, "contract_123");
+        assert!(matches!(contract.contract_type, ContractType::AssetTransfer));
+        assert_eq!(contract.creator, "Alice");
+        assert_eq!(contract.status, ContractStatus::Pending);
+    }
+
+    #[test]
+    fn test_execute_asset_transfer() {
+        let mut env = ExecutionEnvironment::new();
+        env.add_balance("Alice", "ICN_TOKEN", 1000.0);
+
+        let mut contract = SmartContract {
+            id: "contract_1".to_string(),
+            contract_type: ContractType::AssetTransfer,
+            creator: "Alice".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"from": "Alice", "to": "Bob", "asset": "ICN_TOKEN", "amount": 100.0}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
+        contract.activate();
+        
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.get_balance("Alice", "ICN_TOKEN"), 900.0);
+        assert_eq!(env.get_balance("Bob", "ICN_TOKEN"), 100.0);
+    }
+
+    #[test]
+    fn test_execute_proposal() {
+        let mut env = ExecutionEnvironment::new();
+        let mut contract = SmartContract {
+            id: "contract_2".to_string(),
+            contract_type: ContractType::Proposal,
+            creator: "Charlie".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"title": "New Project", "description": "Start a community garden", "options": ["Approve", "Reject"], "voting_period": 604800, "quorum": 0.5}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.proposals.len(), 1);
+        assert!(env.proposals.contains_key(&contract.id));
+    }
+
+    #[test]
+    fn test_execute_governance_vote() {
+        let mut env = ExecutionEnvironment::new();
+        let proposal_id = "proposal_1".to_string();
+        let mut contract = SmartContract {
+            id: "contract_3".to_string(),
+            contract_type: ContractType::GovernanceVote,
+            creator: "Dave".to_string(),
+            created_at: Utc::now(),
+            content: format!(r#"{{"proposal_id": "{}", "voter": "Dave", "vote": true}}"#, proposal_id),
+            status: ContractStatus::Pending,
+        };
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.votes.len(), 1);
+        assert_eq!(env.votes[&proposal_id], vec![("Dave".to_string(), true)]);
+    }
+
+    #[test]
+    fn test_execute_service_agreement() {
+        let mut env = ExecutionEnvironment::new();
+        let mut contract = SmartContract {
+            id: "contract_4".to_string(),
+            contract_type: ContractType::ServiceAgreement,
+            creator: "Eve".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"provider": "Eve", "consumer": "Frank", "service": "Web Development", "terms": "Develop a website for 1000 ICN_TOKEN", "start_date": "2023-07-01T00:00:00Z", "end_date": "2023-08-01T00:00:00Z"}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.service_agreements.len(), 1);
+        assert!(env.service_agreements.contains_key(&contract.id));
+    }
+
+    #[test]
+    fn test_execute_resource_allocation() {
+        let mut env = ExecutionEnvironment::new();
+        let mut contract = SmartContract {
+            id: "contract_5".to_string(),
+            contract_type: ContractType::ResourceAllocation,
+            creator: "Grace".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"resource": "Computing Power", "amount": 100.0, "recipient": "Research Team", "duration": 2592000}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.resource_allocations.len(), 1);
+        assert!(env.resource_allocations.contains_key(&contract.id));
+    }
+
+    #[test]
+    fn test_execute_identity_verification() {
+        let mut env = ExecutionEnvironment::new();
+        let mut contract = SmartContract {
+            id: "contract_6".to_string(),
+            contract_type: ContractType::IdentityVerification,
+            creator: "Henry".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"user_id": "Henry", "verification_data": "Passport: AB123456", "verification_method": "Government ID", "expiration": "2025-07-01T00:00:00Z"}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.identities.len(), 1);
+        assert!(env.identities.contains_key("Henry"));
+    }
+
+    #[test]
+    fn test_execute_cooperative_membership() {
+        let mut env = ExecutionEnvironment::new();
+        let mut contract = SmartContract {
+            id: "contract_7".to_string(),
+            contract_type: ContractType::CooperativeMembership,
+            creator: "Ivy".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"user_id": "Ivy", "membership_type": "Full Member", "join_date": "2023-07-01T00:00:00Z", "subscription_period": 31536000}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.memberships.len(), 1);
+        assert!(env.memberships.contains_key("Ivy"));
+    }
+
+    #[test]
+    fn test_execute_custom_contract() {
+        let mut env = ExecutionEnvironment::new();
+        let mut contract = SmartContract {
+            id: "contract_8".to_string(),
+            contract_type: ContractType::Custom("DataSharing".to_string()),
+            creator: "Jack".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"data_provider": "Jack", "data_consumer": "Research Institute", "dataset": "Anonymous Health Records", "usage_terms": "Research purposes only", "compensation": 500}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
+        contract.activate();
+        assert!(contract.execute(&mut env).is_ok());
+        assert_eq!(env.custom_contracts.len(), 1);
+        assert!(env.custom_contracts.contains_key(&contract.id));
+    }
+
+    #[test]
+    fn test_contract_lifecycle() {
+        let mut contract = SmartContract {
+            id: "contract_9".to_string(),
+            contract_type: ContractType::AssetTransfer,
+            creator: "Alice".to_string(),
+            created_at: Utc::now(),
+            content: r#"{"from": "Alice", "to": "Bob", "asset": "ICN_TOKEN", "amount": 100.0}"#.to_string(),
+            status: ContractStatus::Pending,
+        };
+
+        assert_eq!(contract.status, ContractStatus::Pending);
+
+        contract.activate();
+        assert_eq!(contract.status, ContractStatus::Active);
+
+        contract.complete();
+        assert_eq!(contract.status, ContractStatus::Completed);
+
+        contract.terminate();
+        assert_eq!(contract.status, ContractStatus::Terminated);
+    }
+}
+===== END OF src/smart_contract/smart_contract.rs =====
+
+===== START OF src/tests/blockchain_and_consensus_tests.rs =====
+// Filename: src/tests/blockchain_and_consensus_tests.rs
+
+use crate::blockchain::{Blockchain, Transaction};
+use crate::currency::CurrencyType;
+use crate::consensus::Consensus;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_blockchain_creation() {
+        let blockchain = Blockchain::new();
+        assert_eq!(blockchain.chain.len(), 1, "Blockchain should be initialized with one genesis block");
+        assert_eq!(blockchain.chain[0].index, 0, "Genesis block should have index 0");
+    }
+
+    #[test]
+    fn test_block_creation() {
+        let mut blockchain = Blockchain::new();
+        blockchain.consensus.add_member("Alice".to_string());
+        let transactions = vec![
+            Transaction::new("Alice".to_string(), "Bob".to_string(), 100.0, CurrencyType::BasicNeeds, 1000),
+            Transaction::new("Bob".to_string(), "Charlie".to_string(), 50.0, CurrencyType::Education, 1000),
+        ];
+        let result = blockchain.create_block("Alice".to_string());
+        assert!(result.is_ok(), "Block creation failed: {:?}", result.err());
+        assert_eq!(blockchain.chain.len(), 2, "Blockchain should have two blocks after creation");
+    }
+
+    #[test]
+    fn test_reputation_update() {
+        let mut blockchain = Blockchain::new();
+        blockchain.consensus.add_member("Alice".to_string());
+        blockchain.consensus.update_reputation("Alice", 0.5);
+        assert_eq!(blockchain.consensus.get_reputation("Alice"), Some(1.5), 
+                   "Alice's reputation should be updated to 1.5");
+    }
+
+    #[test]
+    fn test_voting() {
+        let mut blockchain = Blockchain::new();
+        blockchain.consensus.add_member("Alice".to_string());
+        blockchain.consensus.add_member("Bob".to_string());
+        blockchain.consensus.add_member("Charlie".to_string());
+        
+        let transactions = vec![
+            Transaction::new("Alice".to_string(), "Bob".to_string(), 100.0, CurrencyType::BasicNeeds, 1000),
+        ];
+        blockchain.create_block("Alice".to_string()).expect("Block creation should succeed");
+        
+        assert!(blockchain.vote_on_block("Alice", 1, true).is_ok(), "Alice should be able to vote");
+        assert!(blockchain.vote_on_block("Bob", 1, true).is_ok(), "Bob should be able to vote");
+        assert!(blockchain.vote_on_block("Charlie", 1, true).is_ok(), "Charlie should be able to vote");
+        
+        assert!(blockchain.consensus.is_block_valid(1), "Block should be valid after voting");
+    }
+}
+===== END OF src/tests/blockchain_and_consensus_tests.rs =====
+
+===== START OF src/tests/blockchain_tests.rs =====
+// Filename: src/tests/blockchain_tests.rs
+
+use crate::blockchain::{Blockchain, Transaction};
+use crate::currency::CurrencyType;
+
+#[test]
+fn test_blockchain_creation() {
+    let blockchain = Blockchain::new();
+    assert_eq!(blockchain.chain.len(), 1);
+    assert_eq!(blockchain.chain[0].index, 0);
+}
+
+#[test]
+fn test_add_block() {
+    let mut blockchain = Blockchain::new();
+    let transaction = Transaction::new(
+        "Alice".to_string(),
+        "Bob".to_string(),
+        100.0,
+        CurrencyType::BasicNeeds,
+        1000,
+    );
+    blockchain.add_transaction(transaction);
+    assert!(blockchain.create_block("Node1".to_string()).is_ok());
+    assert_eq!(blockchain.chain.len(), 2);
+}
+
+#[test]
+fn test_blockchain_validity() {
+    let mut blockchain = Blockchain::new();
+    let transaction = Transaction::new(
+        "Alice".to_string(),
+        "Bob".to_string(),
+        100.0,
+        CurrencyType::BasicNeeds,
+        1000,
+    );
+    blockchain.add_transaction(transaction);
+    assert!(blockchain.create_block("Node1".to_string()).is_ok());
+    assert!(blockchain.is_chain_valid());
+}
+===== END OF src/tests/blockchain_tests.rs =====
+
+===== START OF src/tests/icn_node_tests.rs =====
+// Filename: src/tests/icn_node_tests.rs
+
+// Import necessary modules and types
+use crate::icn_node::{IcnNode, Packet, PacketType};
+use std::net::SocketAddr;
+
+#[test]
+fn test_fib_functionality() {
+    let mut node = IcnNode::new();
+    let addr1: SocketAddr = "127.0.0.1:8000".parse().unwrap();
+    let addr2: SocketAddr = "127.0.0.1:8001".parse().unwrap();
+
+    node.fib.add_entry("/example/path".to_string(), addr1);
+    node.fib.add_entry("/example/path".to_string(), addr2);
+
+    let next_hops = node.fib.get_next_hops("/example/path");
+    assert!(next_hops.is_some());
+    assert_eq!(next_hops.unwrap().len(), 2);
+    assert!(next_hops.unwrap().contains(&addr1));
+    assert!(next_hops.unwrap().contains(&addr2));
+
+    let longest_match = node.fib.longest_prefix_match("/example/path/subpath");
+    assert!(longest_match.is_some());
+    assert_eq!(longest_match.unwrap().name, "/example/path");
+}
+
+#[test]
+fn test_content_store() {
+    let mut node = IcnNode::new();
+    let packet = Packet {
+        packet_type: PacketType::Data,
+        name: "/test/data".to_string(),
+        content: vec![1, 2, 3, 4],
+    };
+
+    node.content_store.add(packet.name.clone(), packet.clone());
+    let retrieved = node.content_store.get(&packet.name);
+    assert!(retrieved.is_some());
+    assert_eq!(retrieved.unwrap().content, vec![1, 2, 3, 4]);
+}
+
+#[test]
+fn test_packet_processing() {
+    let mut node = IcnNode::new();
+    let addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
+    node.add_interface("eth0".to_string(), addr);
+    node.fib.add_entry("/test".to_string(), addr);
+
+    let interest_packet = Packet {
+        packet_type: PacketType::Interest,
+        name: "/test/data".to_string(),
+        content: vec![],
+    };
+
+    node.process_packet(interest_packet.clone(), "eth0");
+    assert!(node.pit.has_pending_interest(&interest_packet.name));
+
+    let data_packet = Packet {
+        packet_type: PacketType::Data,
+        name: "/test/data".to_string(),
+        content: vec![1, 2, 3, 4],
+    };
+
+    node.process_packet(data_packet.clone(), "eth0");
+    assert!(!node.pit.has_pending_interest(&data_packet.name));
+    assert!(node.content_store.get(&data_packet.name).is_some());
+}
+===== END OF src/tests/icn_node_tests.rs =====
+
+===== START OF src/tests/integration_tests.rs =====
+use icn_node::blockchain::Blockchain;
+use icn_node::smart_contract::{parse_contract, ContractType};
+
+#[test]
+fn test_smart_contract_integration() {
+    let mut blockchain = Blockchain::new();
+
+    // Deploy an asset transfer contract
+    let contract_input = "Asset Transfer
+Creator: Alice
+From: Alice
+To: Bob
+Asset: ICN_TOKEN
+Amount: 100.0";
+
+    let contract = parse_contract(contract_input).unwrap();
+    blockchain.deploy_smart_contract(contract).unwrap();
+
+    // Deploy a proposal contract
+    let proposal_input = "Proposal
+Creator: Charlie
+Title: New Community Project
+Description: Implement a recycling program
+Voting Period: 604800
+Option 1: Approve
+Option 2: Reject
+Quorum: 0.5";
+
+    let proposal_contract = parse_contract(proposal_input).unwrap();
+    blockchain.deploy_smart_contract(proposal_contract).unwrap();
+
+    // Execute smart contracts
+    blockchain.execute_smart_contracts().unwrap();
+
+    // Verify blockchain state
+    assert_eq!(blockchain.chain.len(), 2); // Genesis block + 1 block with contracts
+    assert_eq!(blockchain.chain.last().unwrap().smart_contracts.len(), 2);
+
+    // Verify contract execution results
+    let env = &blockchain.execution_environment;
+    assert_eq!(env.balances.get("Bob").unwrap().get("ICN_TOKEN").unwrap(), &100.0);
+    assert!(env.votes.contains_key(&blockchain.chain.last().unwrap().smart_contracts[1].id));
+}===== END OF src/tests/integration_tests.rs =====
+
+===== START OF src/tests/mod.rs =====
+// ===============================================
+// Tests Module
+// ===============================================
+// This module re-exports the contents of the tests submodules.
+// The tests submodules contain various test cases to ensure
+// the correctness and reliability of the blockchain implementation.
+
+pub mod blockchain_and_consensus_tests;
+pub mod blockchain_tests;
+pub mod icn_node_tests;
+pub mod integration_tests;
+pub mod smart_contract_tests;
+
+pub use blockchain_and_consensus_tests::*;
+pub use blockchain_tests::*;
+pub use icn_node_tests::*;
+pub use integration_tests::*;
+pub use smart_contract_tests::*;
+===== END OF src/tests/mod.rs =====
+
+===== START OF src/tests/smart_contract_tests.rs =====
+// Filename: src/tests/smart_contract_tests.rs
+
+use crate::blockchain::Blockchain;
+use crate::smart_contract::{parse_contract, ContractType};
+
+#[test]
+fn test_smart_contract_integration() {
+    let mut blockchain = Blockchain::new();
+
+    // Deploy an asset transfer contract
+    let contract_input = "Asset Transfer
+Creator: Alice
+From: Alice
+To: Bob
+Asset: ICN_TOKEN
+Amount: 100.0";
+
+    let contract = parse_contract(contract_input).unwrap();
+    blockchain.deploy_smart_contract(contract).unwrap();
+
+    // Deploy a proposal contract
+    let proposal_input = "Proposal
+Creator: Charlie
+Title: New Community Project
+Description: Implement a recycling program
+Voting Period: 604800
+Option 1: Approve
+Option 2: Reject
+Quorum: 0.5";
+
+    let proposal_contract = parse_contract(proposal_input).unwrap();
+    blockchain.deploy_smart_contract(proposal_contract).unwrap();
+
+    // Execute smart contracts
+    blockchain.execute_smart_contracts().unwrap();
+
+    // Verify blockchain state
+    assert_eq!(blockchain.chain.len(), 2); // Genesis block + 1 block with contracts
+    assert_eq!(blockchain.chain.last().unwrap().smart_contracts.len(), 2);
+
+    // Verify contract execution results
+    let env = &blockchain.execution_environment;
+    assert_eq!(env.balances.get("Bob").unwrap().get("ICN_TOKEN").unwrap(), &100.0);
+    assert!(env.votes.contains_key(&blockchain.chain.last().unwrap().smart_contracts[1].id));
+}
+===== END OF src/tests/smart_contract_tests.rs =====
+
+===== START OF src/vm/compiler.rs =====
+use crate::vm::opcode::{Opcode, Value};
+use std::error::Error;
+
+// Define the tokens that the lexer will generate from source code
+#[derive(Debug, PartialEq, Clone)]
+enum Token {
+    Identifier(String),
+    Integer(i64),
+    Float(f64),
+    String(String),
+    True,
+    False,
+    If,
+    Else,
+    While,
+    Function,
+    Return,
+    Vote,
+    AllocateResource,
+    UpdateReputation,
+    CreateProposal,
+    GetProposalStatus,
+    Emit,
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    Semicolon,
+    Comma,
+    Equals,
+    Plus,
+    Minus,
+    Multiply,
+    Divide,
+    Modulo,
+    DoubleEquals,
+    NotEquals,
+    GreaterThan,
+    LessThan,
+    GreaterThanEquals,
+    LessThanEquals,
+    And,
+    Or,
+    Not,
+}
+
+// Lexer for converting source code into tokens
+struct Lexer {
+    input: Vec<char>,
+    position: usize,
+}
+
+impl Lexer {
+    // Create a new lexer with the given input string
+    fn new(input: &str) -> Self {
+        Lexer {
+            input: input.chars().collect(),
+            position: 0,
+        }
+    }
+
+    // Get the next token from the input
+    fn next_token(&mut self) -> Option<Token> {
+        self.skip_whitespace();
+
+        if self.position >= self.input.len() {
+            return None;
+        }
+
+        match self.input[self.position] {
+            '(' => {
+                self.position += 1;
+                Some(Token::LParen)
+            }
+            ')' => {
+                self.position += 1;
+                Some(Token::RParen)
+            }
+            '{' => {
+                self.position += 1;
+                Some(Token::LBrace)
+            }
+            '}' => {
+                self.position += 1;
+                Some(Token::RBrace)
+            }
+            ';' => {
+                self.position += 1;
+                Some(Token::Semicolon)
+            }
+            ',' => {
+                self.position += 1;
+                Some(Token::Comma)
+            }
+            '+' => {
+                self.position += 1;
+                Some(Token::Plus)
+            }
+            '-' => {
+                self.position += 1;
+                Some(Token::Minus)
+            }
+            '*' => {
+                self.position += 1;
+                Some(Token::Multiply)
+            }
+            '/' => {
+                self.position += 1;
+                Some(Token::Divide)
+            }
+            '%' => {
+                self.position += 1;
+                Some(Token::Modulo)
+            }
+            '=' => {
+                if self.peek_next() == Some('=') {
+                    self.position += 2;
+                    Some(Token::DoubleEquals)
+                } else {
+                    self.position += 1;
+                    Some(Token::Equals)
+                }
+            }
+            '!' => {
+                if self.peek_next() == Some('=') {
+                    self.position += 2;
+                    Some(Token::NotEquals)
+                } else {
+                    self.position += 1;
+                    Some(Token::Not)
+                }
+            }
+            '>' => {
+                if self.peek_next() == Some('=') {
+                    self.position += 2;
+                    Some(Token::GreaterThanEquals)
+                } else {
+                    self.position += 1;
+                    Some(Token::GreaterThan)
+                }
+            }
+            '<' => {
+                if self.peek_next() == Some('=') {
+                    self.position += 2;
+                    Some(Token::LessThanEquals)
+                } else {
+                    self.position += 1;
+                    Some(Token::LessThan)
+                }
+            }
+            '&' => {
+                if self.peek_next() == Some('&') {
+                    self.position += 2;
+                    Some(Token::And)
+                } else {
+                    None // Invalid token
+                }
+            }
+            '|' => {
+                if self.peek_next() == Some('|') {
+                    self.position += 2;
+                    Some(Token::Or)
+                } else {
+                    None // Invalid token
+                }
+            }
+            '"' => Some(self.read_string()),
+            c if c.is_alphabetic() => Some(self.read_identifier()),
+            c if c.is_digit(10) => Some(self.read_number()),
+            _ => None, // Invalid token
+        }
+    }
+
+    // Skip whitespace characters in the input
+    fn skip_whitespace(&mut self) {
+        while self.position < self.input.len() && self.input[self.position].is_whitespace() {
+            self.position += 1;
+        }
+    }
+
+    // Peek at the next character without advancing the position
+    fn peek_next(&self) -> Option<char> {
+        if self.position + 1 < self.input.len() {
+            Some(self.input[self.position + 1])
+        } else {
+            None
+        }
+    }
+
+    // Read a string token from the input
+    fn read_string(&mut self) -> Token {
+        self.position += 1; // Skip opening quote
+        let start = self.position;
+        while self.position < self.input.len() && self.input[self.position] != '"' {
+            self.position += 1;
+        }
+        let value: String = self.input[start..self.position].iter().collect();
+        self.position += 1; // Skip closing quote
+        Token::String(value)
+    }
+
+    // Read an identifier token from the input
+    fn read_identifier(&mut self) -> Token {
+        let start = self.position;
+        while self.position < self.input.len() && (self.input[self.position].is_alphanumeric() || self.input[self.position] == '_') {
+            self.position += 1;
+        }
+        let value: String = self.input[start..self.position].iter().collect();
+        match value.as_str() {
+            "true" => Token::True,
+            "false" => Token::False,
+            "if" => Token::If,
+            "else" => Token::Else,
+            "while" => Token::While,
+            "function" => Token::Function,
+            "return" => Token::Return,
+            "vote" => Token::Vote,
+            "allocate_resource" => Token::AllocateResource,
+            "update_reputation" => Token::UpdateReputation,
+            "create_proposal" => Token::CreateProposal,
+            "get_proposal_status" => Token::GetProposalStatus,
+            "emit" => Token::Emit,
+            _ => Token::Identifier(value),
+        }
+    }
+
+    // Read a number token from the input
+    fn read_number(&mut self) -> Token {
+        let start = self.position;
+        let mut is_float = false;
+        while self.position < self.input.len() && (self.input[self.position].is_digit(10) || self.input[self.position] == '.') {
+            if self.input[self.position] == '.' {
+                is_float = true;
+            }
+            self.position += 1;
+        }
+        let value: String = self.input[start..self.position].iter().collect();
+        if is_float {
+            Token::Float(value.parse().unwrap())
+        } else {
+            Token::Integer(value.parse().unwrap())
+        }
+    }
+}
+
+// Parser for converting tokens into opcodes
+struct Parser {
+    tokens: Vec<Token>,
+    position: usize,
+}
+
+impl Parser {
+    // Create a new parser with the given tokens
+    fn new(tokens: Vec<Token>) -> Self {
+        Parser {
+            tokens,
+            position: 0,
+        }
+    }
+
+    // Parse the tokens into a vector of opcodes
+    fn parse(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        let mut opcodes = Vec::new();
+        while self.position < self.tokens.len() {
+            opcodes.append(&mut self.parse_statement()?);
+        }
+        Ok(opcodes)
+    }
+
+    // Parse a single statement into opcodes
+    fn parse_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        match self.current_token() {
+            Some(Token::If) => self.parse_if_statement(),
+            Some(Token::While) => self.parse_while_statement(),
+            Some(Token::Function) => self.parse_function_definition(),
+            Some(Token::Return) => self.parse_return_statement(),
+            Some(Token::Identifier(_)) => self.parse_assignment_or_function_call(),
+            Some(Token::Vote) => self.parse_vote_statement(),
+            Some(Token::AllocateResource) => self.parse_allocate_resource_statement(),
+            Some(Token::UpdateReputation) => self.parse_update_reputation_statement(),
+            Some(Token::CreateProposal) => self.parse_create_proposal_statement(),
+            Some(Token::GetProposalStatus) => self.parse_get_proposal_status_statement(),
+            Some(Token::Emit) => self.parse_emit_statement(),
+            _ => Err("Unexpected token in statement".into()),
+        }
+    }
+
+    // Parse an if statement into opcodes
+    fn parse_if_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        // Implementation for parsing if statements
+        Err("If statement parsing not implemented yet".into())
+    }
+
+    // Parse a while loop into opcodes
+    fn parse_while_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        // Implementation for parsing while loops
+        Err("While statement parsing not implemented yet".into())
+    }
+
+    // Parse a function definition into opcodes
+    fn parse_function_definition(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        // Implementation for parsing function definitions
+        Err("Function definition parsing not implemented yet".into())
+    }
+
+    // Parse a return statement into opcodes
+    fn parse_return_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        self.consume_token(Token::Return)?;
+        let mut opcodes = self.parse_expression()?;
+        opcodes.push(Opcode::Return);
+        self.consume_token(Token::Semicolon)?;
+        Ok(opcodes)
+    }
+
+    // Parse an assignment or function call into opcodes
+    fn parse_assignment_or_function_call(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        let identifier = self.consume_identifier()?;
+        match self.current_token() {
+            Some(Token::Equals) => self.parse_assignment(identifier),
+            Some(Token::LParen) => self.parse_function_call(identifier),
+            _ => Err("Expected '=' or '(' after identifier".into()),
+        }
+    }
+
+    // Parse an assignment statement into opcodes
+    fn parse_assignment(&mut self, identifier: String) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        self.consume_token(Token::Equals)?;
+        let mut opcodes = self.parse_expression()?;
+        opcodes.push(Opcode::Store(identifier));
+        self.consume_token(Token::Semicolon)?;
+        Ok(opcodes)
+    }
+
+    // Parse a function call into opcodes
+    fn parse_function_call(&mut self, identifier: String) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        self.consume_token(Token::LParen)?;
+        let mut opcodes = Vec::new();
+        while !matches!(self.current_token(), Some(Token::RParen)) {
+            opcodes.append(&mut self.parse_expression()?);
+            if matches!(self.current_token(), Some(Token::Comma)) {
+                self.consume_token(Token::Comma)?;
+            }
+        }
+        self.consume_token(Token::RParen)?;
+        opcodes.push(Opcode::Call(identifier));
+        self.consume_token(Token::Semicolon)?;
+        Ok(opcodes)
+    }
+
+    // Parse a vote statement into opcodes
+    fn parse_vote_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        self.consume_token(Token::Vote)?;
+        self.consume_token(Token::LParen)?;
+        let proposal_id = self.consume_string()?;
+        self.consume_token(Token::Comma)?;
+        let mut opcodes = self.parse_expression()?; // This should push a boolean onto the stack
+        self.consume_token(Token::RParen)?;
+        opcodes.push(Opcode::Vote(proposal_id));
+        self.consume_token(Token::Semicolon)?;
+        Ok(opcodes)
+    }
+
+    // Parse an allocate resource statement into opcodes
+    fn parse_allocate_resource_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        self.consume_token(Token::AllocateResource)?;
+        self.consume_token(Token::LParen)?;
+        let resource_id = self.consume_string()?;
+        self.consume_token(Token::Comma)?;
+        let mut opcodes = self.parse_expression()?; // This should push an integer onto the stack
+        self.consume_token(Token::RParen)?;
+        opcodes.push(Opcode::AllocateResource(resource_id));
+        self.consume_token(Token::Semicolon)?;
+        Ok(opcodes)
+    }
+
+    // Parse an update reputation statement into opcodes
+    fn parse_update_reputation_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        self.consume_token(Token::UpdateReputation)?;
+        self.consume_token(Token::LParen)?;
+        let address = self.consume_string()?;
+        self.consume_token(Token::Comma)?;
+        let mut opcodes = self.parse_expression()?; // This should push an integer onto the stack
+        self.consume_token(Token::RParen)?;
+        opcodes.push(Opcode::UpdateReputation(address));
+        self.consume_token(Token::Semicolon)?;
+        Ok(opcodes)
+    }
+
+    // Parse a create proposal statement into opcodes
+    fn parse_create_proposal_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        self.consume_token(Token::CreateProposal)?;
+        self.consume_token(Token::LParen)?;
+        let mut opcodes = self.parse_expression()?; // This should push a string onto the stack
+        self.consume_token(Token::RParen)?;
+        opcodes.push(Opcode::CreateProposal);
+        self.consume_token(Token::Semicolon)?;
+        Ok(opcodes)
+    }
+
+    // Parse a get proposal status statement into opcodes
+    fn parse_get_proposal_status_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        self.consume_token(Token::GetProposalStatus)?;
+        self.consume_token(Token::LParen)?;
+        let mut opcodes = self.parse_expression()?; // This should push a string onto the stack
+        self.consume_token(Token::RParen)?;
+        opcodes.push(Opcode::GetProposalStatus);
+        self.consume_token(Token::Semicolon)?;
+        Ok(opcodes)
+    }
+
+    // Parse an emit statement into opcodes
+    fn parse_emit_statement(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        self.consume_token(Token::Emit)?;
+        self.consume_token(Token::LParen)?;
+        let event_name = self.consume_string()?;
+        self.consume_token(Token::Comma)?;
+        let mut opcodes = self.parse_expression()?; // This should push the event data onto the stack
+        self.consume_token(Token::RParen)?;
+        opcodes.push(Opcode::Emit(event_name));
+        self.consume_token(Token::Semicolon)?;
+        Ok(opcodes)
+    }
+
+    // Parse an expression into opcodes
+    fn parse_expression(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        let mut opcodes = self.parse_term()?;
+
+        while let Some(token) = self.current_token() {
+            match token {
+                Token::Plus => {
+                    self.position += 1;
+                    opcodes.append(&mut self.parse_term()?);
+                    opcodes.push(Opcode::Add);
+                }
+                Token::Minus => {
+                    self.position += 1;
+                    opcodes.append(&mut self.parse_term()?);
+                    opcodes.push(Opcode::Sub);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(opcodes)
+    }
+
+    fn parse_term(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        let mut opcodes = self.parse_factor()?;
+
+        while let Some(token) = self.current_token() {
+            match token {
+                Token::Multiply => {
+                    self.position += 1;
+                    opcodes.append(&mut self.parse_factor()?);
+                    opcodes.push(Opcode::Mul);
+                }
+                Token::Divide => {
+                    self.position += 1;
+                    opcodes.append(&mut self.parse_factor()?);
+                    opcodes.push(Opcode::Div);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(opcodes)
+    }
+
+    fn parse_factor(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        let token = self.current_token().cloned();
+        match token {
+            Some(Token::Integer(value)) => {
+                self.position += 1;
+                Ok(vec![Opcode::Push(Value::Int(value))])
+            }
+            Some(Token::Float(value)) => {
+                self.position += 1;
+                Ok(vec![Opcode::Push(Value::Float(value))])
+            }
+            Some(Token::String(value)) => {
+                self.position += 1;
+                Ok(vec![Opcode::Push(Value::String(value))])
+            }
+            Some(Token::True) => {
+                self.position += 1;
+                Ok(vec![Opcode::Push(Value::Bool(true))])
+            }
+            Some(Token::False) => {
+                self.position += 1;
+                Ok(vec![Opcode::Push(Value::Bool(false))])
+            }
+            Some(Token::Identifier(name)) => {
+                self.position += 1;
+                Ok(vec![Opcode::Load(name)])
+            }
+            Some(Token::LParen) => {
+                self.position += 1;
+                let expr = self.parse_expression()?;
+                self.consume_token(Token::RParen)?;
+                Ok(expr)
+            }
+            _ => Err("Unexpected token in expression".into()),
+        }
+    }
+
+    // Consume the next token if it matches the expected token
+    fn consume_token(&mut self, expected: Token) -> Result<(), Box<dyn Error>> {
+        if self.current_token() == Some(&expected) {
+            self.position += 1;
+            Ok(())
+        } else {
+            Err(format!("Unexpected token: expected {:?}, found {:?}", expected, self.current_token()).into())
+        }
+    }
+
+    // Consume an identifier token
+    fn consume_identifier(&mut self) -> Result<String, Box<dyn Error>> {
+        if let Some(Token::Identifier(name)) = self.current_token().cloned() {
+            self.position += 1;
+            Ok(name)
+        } else {
+            Err(format!("Expected identifier, found {:?}", self.current_token()).into())
+        }
+    }
+
+    // Consume a string token
+    fn consume_string(&mut self) -> Result<String, Box<dyn Error>> {
+        if let Some(Token::String(value)) = self.current_token().cloned() {
+            self.position += 1;
+            Ok(value)
+        } else {
+            Err(format!("Expected string, found {:?}", self.current_token()).into())
+        }
+    }
+
+    // Get the current token
+    fn current_token(&self) -> Option<&Token> {
+        self.tokens.get(self.position)
+    }
+}
+
+// Compiler for converting source code into opcodes
+pub struct CSCLCompiler {
+    lexer: Lexer,
+}
+
+impl CSCLCompiler {
+    // Create a new compiler with the given input source code
+    pub fn new(input: &str) -> Self {
+        CSCLCompiler {
+            lexer: Lexer::new(input),
+        }
+    }
+
+    // Compile the source code into a vector of opcodes
+    pub fn compile(&mut self) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        let tokens = self.lexer.tokens();
+        let mut parser = Parser::new(tokens);
+        parser.parse()
+    }
+}
+
+impl Lexer {
+    // Get all tokens from the input
+    fn tokens(&mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        while let Some(token) = self.next_token() {
+            tokens.push(token);
+        }
+        tokens
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lexer() {
+        let input = "function test(x, y) { return x + y; }";
+        let mut lexer = Lexer::new(input);
+        let tokens = lexer.tokens();
+
+        assert_eq!(tokens, vec![
+            Token::Function,
+            Token::Identifier("test".to_string()),
+            Token::LParen,
+            Token::Identifier("x".to_string()),
+            Token::Comma,
+            Token::Identifier("y".to_string()),
+            Token::RParen,
+            Token::LBrace,
+            Token::Return,
+            Token::Identifier("x".to_string()),
+            Token::Plus,
+            Token::Identifier("y".to_string()),
+            Token::Semicolon,
+            Token::RBrace,
+        ]);
+    }
+
+    #[test]
+    fn test_compiler() {
+        let input = "x = 5 + 3 * 2; y = (10 - 4) / 2;";
+        let mut compiler = CSCLCompiler::new(input);
+        let opcodes = compiler.compile().unwrap();
+
+        assert_eq!(opcodes, vec![
+            Opcode::Push(Value::Int(5)),
+            Opcode::Push(Value::Int(3)),
+            Opcode::Push(Value::Int(2)),
+            Opcode::Mul,
+            Opcode::Add,
+            Opcode::Store("x".to_string()),
+            Opcode::Push(Value::Int(10)),
+            Opcode::Push(Value::Int(4)),
+            Opcode::Sub,
+            Opcode::Push(Value::Int(2)),
+            Opcode::Div,
+            Opcode::Store("y".to_string()),
+        ]);
+    }
+}
+===== END OF src/vm/compiler.rs =====
+
+===== START OF src/vm/coop_vm.rs =====
+use super::opcode::{Opcode, Value};
+use std::collections::HashMap;
+
+pub struct CoopVM {
+    stack: Vec<Value>,
+    memory: HashMap<String, Value>,
+    program: Vec<Opcode>,
+    pc: usize,
+}
+
+impl CoopVM {
+    pub fn new(program: Vec<Opcode>) -> Self {
+        CoopVM {
+            stack: Vec::new(),
+            memory: HashMap::new(),
+            program,
+            pc: 0,
+        }
+    }
+
+    pub fn load_program(&mut self, program: Vec<Opcode>) {
+        self.program = program;
+        self.pc = 0;
+    }
+
+    pub fn run(&mut self) -> Result<(), String> {
+        while self.pc < self.program.len() {
+            self.execute_instruction()?;
+            self.pc += 1;
+        }
+        Ok(())
+    }
+
+    fn execute_instruction(&mut self) -> Result<(), String> {
+        let opcode = self.program[self.pc].clone();
+        match opcode {
+            Opcode::Push(value) => self.stack.push(value),
+            Opcode::Pop => {
+                self.stack.pop().ok_or("Stack underflow")?;
+            }
+            Opcode::Add => self.binary_op(|a, b| a + b)?,
+            Opcode::Sub => self.binary_op(|a, b| a - b)?,
+            Opcode::Mul => self.binary_op(|a, b| a * b)?,
+            Opcode::Div => self.binary_op(|a, b| a / b)?,
+            Opcode::Eq => self.compare_op(|a, b| a == b)?,
+            Opcode::Lt => self.compare_op(|a, b| a < b)?,
+            Opcode::Gt => self.compare_op(|a, b| a > b)?,
+            Opcode::And => self.logic_op(|a, b| a && b)?,
+            Opcode::Or => self.logic_op(|a, b| a || b)?,
+            Opcode::Not => {
+                let a = self.pop_bool()?;
+                self.stack.push(Value::Bool(!a));
+            }
+            Opcode::Return => return Ok(()), // For now, just return
+            Opcode::Store(name) => {
+                let value = self.stack.pop().ok_or("Stack underflow")?;
+                self.memory.insert(name, value);
+            }
+            Opcode::Load(name) => {
+                let value = self.memory.get(&name).ok_or("Variable not found")?.clone();
+                self.stack.push(value);
+            }
+            Opcode::Call(_) => return Err("Function calls not implemented yet".to_string()),
+            Opcode::Vote(proposal_id) => {
+                let vote = self.pop_bool()?;
+                println!("Voting {} on proposal {}", if vote { "Yes" } else { "No" }, proposal_id);
+            }
+            Opcode::AllocateResource(resource_id) => {
+                let amount = self.pop_int()?;
+                println!("Allocating {} units of resource {}", amount, resource_id);
+            }
+            Opcode::UpdateReputation(address) => {
+                let change = self.pop_int()?;
+                println!("Updating reputation of {} by {}", address, change);
+            }
+            Opcode::CreateProposal => {
+                let description = self.pop_string()?;
+                println!("Creating proposal: {}", description);
+                self.stack.push(Value::String("new_proposal_id".to_string()));
+            }
+            Opcode::GetProposalStatus => {
+                let proposal_id = self.pop_string()?;
+                println!("Getting status of proposal: {}", proposal_id);
+                self.stack.push(Value::String("Active".to_string()));
+            }
+            Opcode::Emit(event_name) => {
+                let event_data = self.stack.pop().ok_or("Stack underflow")?;
+                println!("Emitting event {}: {:?}", event_name, event_data);
+            }
+        }
+        Ok(())
+    }
+
+    fn binary_op<F>(&mut self, op: F) -> Result<(), String>
+    where
+        F: Fn(i64, i64) -> i64,
+    {
+        let b = self.pop_int()?;
+        let a = self.pop_int()?;
+        self.stack.push(Value::Int(op(a, b)));
+        Ok(())
+    }
+
+    fn compare_op<F>(&mut self, op: F) -> Result<(), String>
+    where
+        F: Fn(&Value, &Value) -> bool,
+    {
+        let b = self.stack.pop().ok_or("Stack underflow")?;
+        let a = self.stack.pop().ok_or("Stack underflow")?;
+        self.stack.push(Value::Bool(op(&a, &b)));
+        Ok(())
+    }
+
+    fn logic_op<F>(&mut self, op: F) -> Result<(), String>
+    where
+        F: Fn(bool, bool) -> bool,
+    {
+        let b = self.pop_bool()?;
+        let a = self.pop_bool()?;
+        self.stack.push(Value::Bool(op(a, b)));
+        Ok(())
+    }
+
+    fn pop_int(&mut self) -> Result<i64, String> {
+        match self.stack.pop().ok_or("Stack underflow")? {
+            Value::Int(i) => Ok(i),
+            _ => Err("Expected integer value".to_string()),
+        }
+    }
+
+    fn pop_bool(&mut self) -> Result<bool, String> {
+        match self.stack.pop().ok_or("Stack underflow")? {
+            Value::Bool(b) => Ok(b),
+            _ => Err("Expected boolean value".to_string()),
+        }
+    }
+
+    fn pop_string(&mut self) -> Result<String, String> {
+        match self.stack.pop().ok_or("Stack underflow")? {
+            Value::String(s) => Ok(s),
+            _ => Err("Expected string value".to_string()),
+        }
+    }
+
+    pub fn get_stack(&self) -> &Vec<Value> {
+        &self.stack
+    }
+
+    pub fn get_memory(&self) -> &HashMap<String, Value> {
+        &self.memory
+    }
+}
+===== END OF src/vm/coop_vm.rs =====
+
+===== START OF src/vm/mod.rs =====
+mod compiler;
+pub mod opcode;
+mod coop_vm;
+
+pub use compiler::CSCLCompiler;
+pub use opcode::{Opcode, Value}; // Ensure Value is re-exported from opcode
+pub use coop_vm::CoopVM;
+===== END OF src/vm/mod.rs =====
+
+===== START OF src/vm/opcode.rs =====
+#[derive(Debug, Clone, PartialEq, PartialOrd)] // Add PartialOrd here
+pub enum Value {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Opcode {
+    Push(Value),
+    Pop,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Eq,
+    Lt,
+    Gt,
+    And,
+    Or,
+    Not,
+    Return,
+    Store(String),
+    Load(String),
+    Call(String),
+    Vote(String),
+    AllocateResource(String),
+    UpdateReputation(String),
+    CreateProposal,
+    GetProposalStatus,
+    Emit(String),
+}
+===== END OF src/vm/opcode.rs =====
+
+===== START OF src/vm/vm.rs =====
+// ===============================================
+// Cooperative Virtual Machine (CoopVM) Implementation
+// ===============================================
+// This file defines the CoopVM structure and its functionalities. It includes methods
+// for executing compiled CSCL smart contract code.
+//
+// Key concepts:
+// - Opcode: Represents a single operation in the virtual machine.
+// - Value: Represents different types of values that can be manipulated by the virtual machine.
+// - Stack-Based Execution: The CoopVM uses a stack-based approach to execute operations.
+
+use std::collections::HashMap;
+use std::fmt;
+
+/// Represents different types of values that can be manipulated by the virtual machine.
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum Value {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    String(String),
+    Address(String),
+    List(Vec<Value>),
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Int(i) => write!(f, "{}", i),
+            Value::Float(fl) => write!(f, "{}", fl),
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::String(s) => write!(f, "\"{}\"", s),
+            Value::Address(a) => write!(f, "Address({})", a),
+            Value::List(l) => write!(f, "{:?}", l),
+        }
+    }
+}
+
+/// Represents different types of operations (opcodes) that the virtual machine can execute.
+#[derive(Debug, Clone)]
+pub enum Opcode {
+    Push(Value),
+    Pop,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    Neq,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+    And,
+    Or,
+    Not,
+    Store(String),
+    Load(String),
+    JumpIf(usize),
+    Jump(usize),
+    Call(String),
+    Return,
+    CreateList,
+    AppendList,
+    GetListItem,
+    SetListItem,
+    Vote(String),
+    AllocateResource(String),
+    UpdateReputation(String),
+    CreateProposal,
+    GetProposalStatus,
+    Emit(String),
+}
+
+/// The main struct representing the Cooperative Virtual Machine (CoopVM).
+pub struct CoopVM {
+    stack: Vec<Value>,
+    memory: HashMap<String, Value>,
+    program: Vec<Opcode>,
+    pc: usize,
+    call_stack: Vec<usize>,
+    functions: HashMap<String, usize>,
+}
+
+impl CoopVM {
+    /// Creates a new instance of the CoopVM.
+    /// # Arguments
+    /// * `program` - A vector of opcodes representing the program to be executed.
+    pub fn new(program: Vec<Opcode>) -> Self {
+        CoopVM {
+            stack: Vec::new(),
+            memory: HashMap::new(),
+            program,
+            pc: 0,
+            call_stack: Vec::new(),
+            functions: HashMap::new(),
+        }
+    }
+
+    /// Runs the program loaded in the CoopVM.
+    /// # Returns
+    /// Result indicating success or failure.
+    pub fn run(&mut self) -> Result<(), String> {
+        while self.pc < self.program.len() {
+            self.execute_instruction()?;
+            self.pc += 1;
+        }
+        Ok(())
+    }
+
+    /// Executes a single instruction in the program.
+    /// # Returns
+    /// Result indicating success or failure.
+    fn execute_instruction(&mut self) -> Result<(), String> {
+        let current_instruction = &self.program[self.pc].clone(); // Clone to avoid immutable borrow
+        match current_instruction {
+            Opcode::Push(value) => self.stack.push(value.clone()),
+            Opcode::Pop => {
+                self.stack.pop().ok_or("Stack underflow")?;
+            }
+            Opcode::Add => self.binary_op(|a, b| a + b)?,
+            Opcode::Sub => self.binary_op(|a, b| a - b)?,
+            Opcode::Mul => self.binary_op(|a, b| a * b)?,
+            Opcode::Div => self.binary_op(|a, b| a / b)?,
+            Opcode::Mod => self.binary_op(|a, b| a % b)?,
+            Opcode::Eq => self.compare_op(|a, b| a == b)?,
+            Opcode::Neq => self.compare_op(|a, b| a != b)?,
+            Opcode::Gt => self.compare_op(|a, b| a > b)?,
+            Opcode::Lt => self.compare_op(|a, b| a < b)?,
+            Opcode::Gte => self.compare_op(|a, b| a >= b)?,
+            Opcode::Lte => self.compare_op(|a, b| a <= b)?,
+            Opcode::And => self.logic_op(|a, b| a && b)?,
+            Opcode::Or => self.logic_op(|a, b| a || b)?,
+            Opcode::Not => {
+                let a = self.pop_bool()?;
+                self.stack.push(Value::Bool(!a));
+            }
+            Opcode::Store(name) => {
+                let value = self.stack.pop().ok_or("Stack underflow")?;
+                self.memory.insert(name.clone(), value);
+            }
+            Opcode::Load(name) => {
+                let value = self.memory.get(name).ok_or("Variable not found")?.clone();
+                self.stack.push(value);
+            }
+            Opcode::JumpIf(target) => {
+                if self.pop_bool()? {
+                    self.pc = *target - 1; // -1 because pc will be incremented after this
+                }
+            }
+            Opcode::Jump(target) => {
+                self.pc = *target - 1; // -1 because pc will be incremented after this
+            }
+            Opcode::Call(func_name) => {
+                let func_pc = self.functions.get(func_name).ok_or("Function not found")?;
+                self.call_stack.push(self.pc);
+                self.pc = *func_pc - 1; // -1 because pc will be incremented after this
+            }
+            Opcode::Return => {
+                self.pc = self.call_stack.pop().ok_or("Return without call")?;
+            }
+            Opcode::CreateList => {
+                self.stack.push(Value::List(Vec::new()));
+            }
+            Opcode::AppendList => {
+                let value = self.stack.pop().ok_or("Stack underflow")?;
+                if let Some(Value::List(list)) = self.stack.last_mut() {
+                    list.push(value);
+                } else {
+                    return Err("Expected list on top of stack".to_string());
+                }
+            }
+            Opcode::GetListItem => {
+                let index = self.pop_int()?;
+                if let Some(Value::List(list)) = self.stack.pop() {
+                    let item = list.get(index as usize).ok_or("List index out of bounds")?.clone();
+                    self.stack.push(item);
+                } else {
+                    return Err("Expected list on top of stack".to_string());
+                }
+            }
+            Opcode::SetListItem => {
+                let value = self.stack.pop().ok_or("Stack underflow")?;
+                let index = self.pop_int()?;
+                if let Some(Value::List(list)) = self.stack.last_mut() {
+                    if (index as usize) < list.len() {
+                        list[index as usize] = value;
+                    } else {
+                        return Err("List index out of bounds".to_string());
+                    }
+                } else {
+                    return Err("Expected list on top of stack".to_string());
+                }
+            }
+            Opcode::Vote(proposal_id) => {
+                let vote = self.pop_bool()?;
+                println!("Voting {} on proposal {}", if vote { "Yes" } else { "No" }, proposal_id);
+                // In a real implementation, this would interact with the governance system
+            }
+            Opcode::AllocateResource(resource_id) => {
+                let amount = self.pop_int()?;
+                println!("Allocating {} units of resource {}", amount, resource_id);
+                // In a real implementation, this would interact with the resource management system
+            }
+            Opcode::UpdateReputation(address) => {
+                let change = self.pop_int()?;
+                println!("Updating reputation of {} by {}", address, change);
+                // In a real implementation, this would interact with the reputation system
+            }
+            Opcode::CreateProposal => {
+                let description = self.pop_string()?;
+                println!("Creating proposal: {}", description);
+                // In a real implementation, this would create a new proposal in the governance system
+                self.stack.push(Value::String("new_proposal_id".to_string()));
+            }
+            Opcode::GetProposalStatus => {
+                let proposal_id = self.pop_string()?;
+                println!("Getting status of proposal: {}", proposal_id);
+                // In a real implementation, this would fetch the status from the governance system
+                self.stack.push(Value::String("Active".to_string()));
+            }
+            Opcode::Emit(event_name) => {
+                let event_data = self.stack.pop().ok_or("Stack underflow")?;
+                println!("Emitting event {}: {}", event_name, event_data);
+                // In a real implementation, this would emit an event to be caught by event listeners
+            }
+        }
+        Ok(())
+    }
+
+    /// Performs a binary operation (e.g., addition, subtraction) on two integers.
+    /// # Arguments
+    /// * `op` - The binary operation to be performed.
+    /// # Returns
+    /// Result indicating success or failure.
+    fn binary_op<F>(&mut self, op: F) -> Result<(), String>
+    where
+        F: Fn(i64, i64) -> i64,
+    {
+        let b = self.pop_int()?;
+        let a = self.pop_int()?;
+        self.stack.push(Value::Int(op(a, b)));
+        Ok(())
+    }
+
+    /// Performs a comparison operation (e.g., equal, greater than) on two values.
+    /// # Arguments
+    /// * `op` - The comparison operation to be performed.
+    /// # Returns
+    /// Result indicating success or failure.
+    fn compare_op<F>(&mut self, op: F) -> Result<(), String>
+    where
+        F: Fn(&Value, &Value) -> bool,
+    {
+        let b = self.stack.pop().ok_or("Stack underflow")?;
+        let a = self.stack.pop().ok_or("Stack underflow")?;
+        self.stack.push(Value::Bool(op(&a, &b)));
+        Ok(())
+    }
+
+    /// Performs a logical operation (e.g., and, or) on two boolean values.
+    /// # Arguments
+    /// * `op` - The logical operation to be performed.
+    /// # Returns
+    /// Result indicating success or failure.
+    fn logic_op<F>(&mut self, op: F) -> Result<(), String>
+    where
+        F: Fn(bool, bool) -> bool,
+    {
+        let b = self.pop_bool()?;
+        let a = self.pop_bool()?;
+        self.stack.push(Value::Bool(op(a, b)));
+        Ok(())
+    }
+
+    /// Pops an integer from the stack.
+    /// # Returns
+    /// Result containing the integer or an error message.
+    fn pop_int(&mut self) -> Result<i64, String> {
+        match self.stack.pop().ok_or("Stack underflow")? {
+            Value::Int(i) => Ok(i),
+            _ => Err("Expected integer value".to_string()),
+        }
+    }
+
+    /// Pops a boolean from the stack.
+    /// # Returns
+    /// Result containing the boolean or an error message.
+    fn pop_bool(&mut self) -> Result<bool, String> {
+        match self.stack.pop().ok_or("Stack underflow")? {
+            Value::Bool(b) => Ok(b),
+            _ => Err("Expected boolean value".to_string()),
+        }
+    }
+
+    /// Pops a string from the stack.
+    /// # Returns
+    /// Result containing the string or an error message.
+    fn pop_string(&mut self) -> Result<String, String> {
+        match self.stack.pop().ok_or("Stack underflow")? {
+            Value::String(s) => Ok(s),
+            _ => Err("Expected string value".to_string()),
+        }
+    }
+
+    /// Registers a function with its program counter position.
+    /// # Arguments
+    /// * `name` - The name of the function.
+    /// * `pc` - The program counter position of the function.
+    pub fn register_function(&mut self, name: String, pc: usize) {
+        self.functions.insert(name, pc);
+    }
+
+    /// Retrieves the current state of the stack.
+    /// # Returns
+    /// A reference to the stack vector.
+    pub fn get_stack(&self) -> &Vec<Value> {
+        &self.stack
+    }
+
+    /// Retrieves the current state of the memory.
+    /// # Returns
+    /// A reference to the memory hash map.
+    pub fn get_memory(&self) -> &HashMap<String, Value> {
+        &self.memory
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_operations() {
+        let program = vec![
+            Opcode::Push(Value::Int(5)),
+            Opcode::Push(Value::Int(3)),
+            Opcode::Add,
+            Opcode::Push(Value::Int(2)),
+            Opcode::Mul,
+        ];
+
+        let mut vm = CoopVM::new(program);
+        vm.run().unwrap();
+
+        assert_eq!(vm.stack, vec![Value::Int(16)]);
+    }
+
+    #[test]
+    fn test_store_and_load() {
+        let program = vec![
+            Opcode::Push(Value::Int(42)),
+            Opcode::Store("x".to_string()),
+            Opcode::Push(Value::Int(10)),
+            Opcode::Load("x".to_string()),
+            Opcode::Add,
+        ];
+
+        let mut vm = CoopVM::new(program);
+        vm.run().unwrap();
+
+        assert_eq!(vm.stack, vec![Value::Int(52)]);
+    }
+
+    #[test]
+    fn test_conditional_jump() {
+        let program = vec![
+            Opcode::Push(Value::Bool(true)),
+            Opcode::JumpIf(3),
+            Opcode::Push(Value::Int(1)),
+            Opcode::Push(Value::Int(2)),
+            Opcode::Add,
+        ];
+
+        let mut vm = CoopVM::new(program);
+        vm.run().unwrap();
+
+        assert_eq!(vm.stack, vec![Value::Int(2)]);
+    }
+
+    #[test]
+    fn test_list_operations() {
+        let program = vec![
+            Opcode::CreateList,
+            Opcode::Push(Value::Int(1)),
+            Opcode::AppendList,
+            Opcode::Push(Value::Int(2)),
+            Opcode::AppendList,
+            Opcode::Push(Value::Int(0)),
+            Opcode::GetListItem,
+        ];
+
+        let mut vm = CoopVM::new(program);
+        vm.run().unwrap();
+
+        assert_eq!(vm.stack, vec![Value::List(vec![Value::Int(1), Value::Int(2)]), Value::Int(1)]);
+    }
+
+    #[test]
+    fn test_cooperative_operations() {
+        let program = vec![
+            Opcode::Push(Value::String("Proposal 1".to_string())),
+            Opcode::CreateProposal,
+            Opcode::Push(Value::Bool(true)),
+            Opcode::Vote("proposal_1".to_string()),
+            Opcode::Push(Value::Int(100)),
+            Opcode::AllocateResource("computing_power".to_string()),
+            Opcode::Push(Value::Int(5)),
+            Opcode::UpdateReputation("user1".to_string()),
+            Opcode::Push(Value::String("proposal_1".to_string())),
+            Opcode::GetProposalStatus,
+        ];
+
+        let mut vm = CoopVM::new(program);
+        vm.run().unwrap();
+
+        assert_eq!(vm.stack, vec![Value::String("new_proposal_id".to_string()), Value::String("Active".to_string())]);
+    }
+}
+===== END OF src/vm/vm.rs =====
+
+===== START OF Cargo.toml =====
+[package]
+name = "icn_node"
+version = "0.3.2"
+edition = "2021"
+
+[dependencies]
+bytes = "1.6.0"
+chrono = { version = "0.4", features = ["serde"] }
+ed25519-dalek = "1.0.1"
+hex = "0.4.3"
+rand = "0.7.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.9"
+tokio = { version = "1.38.0", features = ["full"] }
+humantime-serde = "1.1.1"
+log = "0.4"
+env_logger = "0.10"
+
+[dev-dependencies]
+tokio-test = "0.4.4"
+proptest = "1.0"
+
+# Optional section to define features
+[features]
+default = []
+
+# Optional section for custom build scripts, if needed
+[build-dependencies]
+===== END OF Cargo.toml =====
+
