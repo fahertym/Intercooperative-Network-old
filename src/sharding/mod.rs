@@ -1,5 +1,3 @@
-// src/sharding/mod.rs
-
 use std::collections::HashMap;
 use sha2::{Sha256, Digest};
 use crate::blockchain::{Block, Transaction};
@@ -7,6 +5,8 @@ use crate::network::Node;
 use crate::currency::CurrencyType;
 use std::sync::{Arc, Mutex};
 use ed25519_dalek::{PublicKey, Signature, Verifier};
+
+pub mod cross_shard_communication;
 
 /// Represents a shard in the network
 pub struct Shard {
@@ -21,9 +21,26 @@ pub struct ShardingManager {
     shards: HashMap<u64, Arc<Mutex<Shard>>>,
     shard_count: u64,
     nodes_per_shard: usize,
+    address_to_shard: HashMap<String, u64>,
+    current_shard_id: u64,
 }
 
 impl ShardingManager {
+    pub fn add_balance(&mut self, address: &str, currency_type: CurrencyType, amount: f64) -> Result<(), String> {
+        let shard_id = self.get_shard_for_address(address);
+        if let Some(shard) = self.shards.get_mut(&shard_id) {
+            let mut shard = shard.lock().unwrap();
+            let balance = shard.balances
+                .entry(address.to_string())
+                .or_insert_with(HashMap::new)
+                .entry(currency_type)
+                .or_insert(0.0);
+            *balance += amount;
+            Ok(())
+        } else {
+            Err(format!("Shard {} not found", shard_id))
+        }
+    }
     /// Creates a new ShardingManager
     pub fn new(shard_count: u64, nodes_per_shard: usize) -> Self {
         let mut shards = HashMap::new();
@@ -40,6 +57,8 @@ impl ShardingManager {
             shards,
             shard_count,
             nodes_per_shard,
+            address_to_shard: HashMap::new(),
+            current_shard_id: 0,
         }
     }
 
@@ -60,8 +79,51 @@ impl ShardingManager {
         hash % self.shard_count
     }
 
+    /// Gets the shard for a given address
+    pub fn get_shard_for_address(&self, address: &str) -> u64 {
+        *self.address_to_shard.get(address).unwrap_or(&(self.hash_data(address.as_bytes()) % self.shard_count))
+    }
+
+    /// Gets the current shard ID
+    pub fn get_current_shard_id(&self) -> u64 {
+        self.current_shard_id
+    }
+
+    /// Adds an address to a specific shard
+    pub fn add_address_to_shard(&mut self, address: String, shard_id: u64) {
+        self.address_to_shard.insert(address.clone(), shard_id);
+        println!("Added address {} to shard {}", address, shard_id);
+    }
+
+    /// Initialize balance for an address
+    pub fn initialize_balance(&mut self, address: String, currency_type: CurrencyType, amount: f64) {
+        let shard_id = self.get_shard_for_address(&address);
+        if let Some(shard) = self.shards.get_mut(&shard_id) {
+            let mut shard = shard.lock().unwrap();
+            shard.balances
+                .entry(address)
+                .or_insert_with(HashMap::new)
+                .insert(currency_type, amount);
+        }
+    }
+
+    /// Get balance for an address
+    pub fn get_balance(&self, address: String, currency_type: CurrencyType) -> f64 {
+        let shard_id = self.get_shard_for_address(&address);
+        if let Some(shard) = self.shards.get(&shard_id) {
+            let shard = shard.lock().unwrap();
+            shard.balances
+                .get(&address)
+                .and_then(|balances| balances.get(&currency_type))
+                .cloned()
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        }
+    }
+
     /// Handles cross-shard communication
-    pub fn cross_shard_communication(&self, from_shard: u64, to_shard: u64, transaction: &Transaction) -> Result<(), String> {
+    pub fn transfer_between_shards(&mut self, from_shard: u64, to_shard: u64, transaction: &Transaction) -> Result<(), String> {
         let from_shard = self.shards.get(&from_shard).ok_or(format!("From shard {} not found", from_shard))?;
         let to_shard = self.shards.get(&to_shard).ok_or(format!("To shard {} not found", to_shard))?;
 
@@ -197,6 +259,12 @@ impl ShardingManager {
         bytes.copy_from_slice(&result[..8]);
         u64::from_be_bytes(bytes)
     }
+
+    // Set the current shard ID (for testing purposes)
+    pub fn set_current_shard_id(&mut self, shard_id: u64) {
+        self.current_shard_id = shard_id;
+        println!("Set current shard ID to {}", shard_id);
+    }
 }
 
 #[cfg(test)]
@@ -277,17 +345,19 @@ mod tests {
         transaction.signature = Some(signature.to_bytes().to_vec());
         transaction.public_key = Some(keypair.public.to_bytes().to_vec());
 
-        let mut shard0 = manager.shards.get(&0).unwrap().lock().unwrap(); // Added mut here
-        shard0.balances.entry("Alice".to_string()).or_insert_with(HashMap::new).insert(CurrencyType::BasicNeeds, 1000.0);
-        println!("Initial balance for Alice: {:?}", shard0.balances.get("Alice"));
-        drop(shard0);
+        manager.add_address_to_shard("Alice".to_string(), 0);
+        manager.add_address_to_shard("Bob".to_string(), 1);
 
-        assert!(manager.cross_shard_communication(0, 1, &transaction).is_ok());
+        // Initialize Alice's balance
+        manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
 
-        let shard0 = manager.shards.get(&0).unwrap().lock().unwrap();
-        let shard1 = manager.shards.get(&1).unwrap().lock().unwrap();
+        assert!(manager.transfer_between_shards(0, 1, &transaction).is_ok());
 
-        assert_eq!(shard0.balances.get("Alice").unwrap().get(&CurrencyType::BasicNeeds), Some(&900.0));
-        assert_eq!(shard1.balances.get("Bob").unwrap().get(&CurrencyType::BasicNeeds), Some(&100.0));
+        // Verify balances after transfer
+        let alice_balance = manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds);
+        assert_eq!(alice_balance, 900.0);
+
+        let bob_balance = manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds);
+        assert_eq!(bob_balance, 100.0);
     }
 }

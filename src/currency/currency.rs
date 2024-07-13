@@ -11,11 +11,11 @@
 // ===============================================
 // Imports
 // ===============================================
-// These imports provide necessary functionality for our currency system:
-// - chrono: For handling dates and times
-// - std::collections::HashMap: For storing key-value pairs efficiently
-// - serde: For serializing and deserializing data structures
-// - std::fmt: For custom formatting of our types
+// Importing necessary libraries and modules:
+// - chrono: For handling dates and times.
+// - std::collections::HashMap: For efficient key-value storage.
+// - serde::{Serialize, Deserialize}: For enabling data structure serialization.
+// - std::fmt: For formatting traits.
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
@@ -24,26 +24,24 @@ use std::fmt;
 // ===============================================
 // CurrencyType Enum
 // ===============================================
-// This enum represents the different types of currencies in our system.
-// Each variant corresponds to a specific economic sector or purpose.
-
+// An enumeration defining different types of currencies used in our system,
+// each representing a specific economic sector or utility.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub enum CurrencyType {
-    BasicNeeds,     // For essential goods and services (e.g., food, water)
-    Education,      // For educational services and resources
-    Environmental,  // For environmental initiatives and projects
-    Community,      // For community projects and services
-    Volunteer,      // For volunteer services and recognition
-    Storage,        // For data storage services
-    Processing,     // For computational power and services
-    Energy,         // For energy resources and trading
-    Luxury,         // For non-essential, high-end goods and services
-    Service,        // For general services not covered by other categories
-    Custom(String), // For user-defined currencies with custom names
+    BasicNeeds,    // For essential goods and services like food, water.
+    Education,     // For educational services and resources.
+    Environmental, // For supporting environmental projects and sustainability.
+    Community,     // For community enhancement projects.
+    Volunteer,     // For recognizing volunteer work.
+    Storage,       // For data storage services.
+    Processing,    // For computational services.
+    Energy,        // For energy trading and services.
+    Luxury,        // For luxury goods and services.
+    Service,       // For general services not covered by other categories.
+    Custom(String), // For user-defined currencies, allowing for extensibility.
 }
 
-// Implementation of the Display trait for CurrencyType
-// This allows us to easily convert CurrencyType to a string representation
+// Implementing Display trait for CurrencyType to enable easy printing and formatting.
 impl fmt::Display for CurrencyType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -56,21 +54,20 @@ impl fmt::Display for CurrencyType {
 // ===============================================
 // Currency Struct
 // ===============================================
-// This struct represents a single currency in our system, containing
-// all relevant information about its supply, creation, and issuance.
-
+// Defines a structure for a single currency, including its type, total supply,
+// creation date, last issuance, and issuance rate.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Currency {
-    pub currency_type: CurrencyType, // The type of this currency
-    pub total_supply: f64,           // The total amount of this currency in circulation
-    pub creation_date: DateTime<Utc>, // When this currency was first created
-    pub last_issuance: DateTime<Utc>, // When new units were last issued
-    pub issuance_rate: f64,           // The rate at which new units are issued
+    pub currency_type: CurrencyType, // Type of the currency.
+    pub total_supply: f64,           // Total amount of currency in circulation.
+    pub creation_date: DateTime<Utc>,// Date when the currency was created.
+    pub last_issuance: DateTime<Utc>,// Last date when new units were issued.
+    pub issuance_rate: f64,          // Rate at which new units are issued (percentage per annum).
 }
 
-// Implementation of methods for the Currency struct
+// Methods associated with the Currency struct.
 impl Currency {
-    // Create a new Currency instance with the given parameters
+    // Constructs a new Currency with specified initial values.
     pub fn new(currency_type: CurrencyType, initial_supply: f64, issuance_rate: f64) -> Self {
         let now = Utc::now();
         Currency {
@@ -82,13 +79,13 @@ impl Currency {
         }
     }
 
-    // Mint (create) new currency units and add them to the total supply
+    // Minting function to increase the supply of currency.
     pub fn mint(&mut self, amount: f64) {
         self.total_supply += amount;
         self.last_issuance = Utc::now();
     }
 
-    // Burn (destroy) currency units, reducing the total supply
+    // Burning function to decrease the supply of currency.
     pub fn burn(&mut self, amount: f64) -> Result<(), String> {
         if amount > self.total_supply {
             return Err("Insufficient supply to burn".to_string());
@@ -101,23 +98,22 @@ impl Currency {
 // ===============================================
 // CurrencySystem Struct
 // ===============================================
-// This struct manages all currencies in our system, providing methods
-// for creating, retrieving, and managing multiple currencies.
-
+// Manages all currencies in the system, providing methods for creating,
+// retrieving, and managing currencies.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CurrencySystem {
-    pub currencies: HashMap<CurrencyType, Currency>, // Stores all currencies in the system
+    pub currencies: HashMap<CurrencyType, Currency>, // Stores all currencies in the system.
 }
 
-// Implementation of methods for the CurrencySystem struct
+// Methods associated with the CurrencySystem struct.
 impl CurrencySystem {
-    // Create a new CurrencySystem and initialize it with default currencies
+    // Initializes a new CurrencySystem with default set of currencies.
     pub fn new() -> Self {
         let mut system = CurrencySystem {
             currencies: HashMap::new(),
         };
         
-        // Initialize default currencies with initial supply and issuance rates
+        // Adding default currencies with initial supplies and issuance rates.
         system.add_currency(CurrencyType::BasicNeeds, 1_000_000.0, 0.01);
         system.add_currency(CurrencyType::Education, 500_000.0, 0.005);
         system.add_currency(CurrencyType::Environmental, 750_000.0, 0.008);
@@ -127,28 +123,28 @@ impl CurrencySystem {
         system.add_currency(CurrencyType::Processing, 500_000.0, 0.005);
         system.add_currency(CurrencyType::Energy, 750_000.0, 0.008);
         system.add_currency(CurrencyType::Luxury, 100_000.0, 0.001);
-        system.add_currency(CurrencyType::Service, 200_000.0, 0.004);
+        system.add_currency(CurrencyType::Service, 200,000.0, 0.004);
 
         system
     }
 
-    // Add a new currency to the system
+    // Adds a new currency to the system.
     pub fn add_currency(&mut self, currency_type: CurrencyType, initial_supply: f64, issuance_rate: f64) {
         let currency = Currency::new(currency_type.clone(), initial_supply, issuance_rate);
         self.currencies.insert(currency_type, currency);
     }
 
-    // Get a reference to a currency in the system
+    // Retrieves a reference to a currency by type.
     pub fn get_currency(&self, currency_type: &CurrencyType) -> Option<&Currency> {
         self.currencies.get(currency_type)
     }
 
-    // Get a mutable reference to a currency in the system
+    // Retrieves a mutable reference to a currency for modification.
     pub fn get_currency_mut(&mut self, currency_type: &CurrencyType) -> Option<&mut Currency> {
         self.currencies.get_mut(currency_type)
     }
 
-    // Create a custom currency and add it to the system
+    // Adds a new custom currency to the system.
     pub fn create_custom_currency(&mut self, name: String, initial_supply: f64, issuance_rate: f64) -> Result<(), String> {
         let currency_type = CurrencyType::Custom(name.clone());
         if self.currencies.contains_key(&currency_type) {
@@ -158,7 +154,7 @@ impl CurrencySystem {
         Ok(())
     }
 
-    // Perform adaptive issuance for all currencies in the system
+    // Method to adjust issuance for all currencies based on defined rates.
     pub fn adaptive_issuance(&mut self) {
         let now = Utc::now();
         for currency in self.currencies.values_mut() {
@@ -169,7 +165,7 @@ impl CurrencySystem {
         }
     }
 
-    // Print the total supply of each currency in the system
+    // Prints the total supply of each currency.
     pub fn print_currency_supplies(&self) {
         println!("Currency Supplies:");
         for (currency_type, currency) in &self.currencies {
@@ -181,28 +177,27 @@ impl CurrencySystem {
 // ===============================================
 // Wallet Struct
 // ===============================================
-// This struct represents a user's wallet, capable of holding multiple currencies
-
+// Represents a wallet for a user, storing balances for each currency type.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Wallet {
-    balances: HashMap<CurrencyType, f64>, // Stores the balance for each currency type
+    balances: HashMap<CurrencyType, f64>, // Map of currency types to their balances.
 }
 
-// Implementation of methods for the Wallet struct
+// Methods associated with the Wallet struct.
 impl Wallet {
-    // Create a new, empty wallet
+    // Creates a new empty wallet.
     pub fn new() -> Self {
         Wallet {
             balances: HashMap::new(),
         }
     }
 
-    // Deposit a specific amount of a currency into the wallet
+    // Deposits a specific amount of a currency into the wallet.
     pub fn deposit(&mut self, currency_type: CurrencyType, amount: f64) {
         *self.balances.entry(currency_type).or_insert(0.0) += amount;
     }
 
-    // Withdraw a specific amount of a currency from the wallet
+    // Withdraws a specific amount of a currency from the wallet, if sufficient balance exists.
     pub fn withdraw(&mut self, currency_type: CurrencyType, amount: f64) -> Result<(), String> {
         let balance = self.balances.entry(currency_type.clone()).or_insert(0.0);
         if *balance < amount {
@@ -212,12 +207,12 @@ impl Wallet {
         Ok(())
     }
 
-    // Get the balance of a specific currency in the wallet
+    // Retrieves the balance for a specific currency.
     pub fn get_balance(&self, currency_type: &CurrencyType) -> f64 {
         *self.balances.get(currency_type).unwrap_or(&0.0)
     }
 
-    // Print the balances of all currencies in the wallet
+    // Prints balances of all currencies in the wallet.
     pub fn print_balances(&self) {
         println!("Wallet Balances:");
         for (currency_type, balance) in &self.balances {
@@ -229,8 +224,7 @@ impl Wallet {
 // ===============================================
 // Unit Tests
 // ===============================================
-// These tests verify the correct functionality of our currency system
-
+// Provides tests to ensure functionality of our currency system.
 #[cfg(test)]
 mod tests {
     use super::*;
