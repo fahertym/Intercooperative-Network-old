@@ -1,9 +1,7 @@
 use crate::blockchain::Transaction;
 use crate::sharding::ShardingManager;
-use crate::currency::CurrencyType;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-
 
 #[derive(Clone, Debug)]
 pub struct CrossShardTransaction {
