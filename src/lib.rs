@@ -10,7 +10,7 @@ pub mod network;
 pub mod node;
 pub mod smart_contract;
 pub mod vm;
-pub mod sharding; // New module
+pub mod sharding;
 
 pub use blockchain::{Block, Transaction, Blockchain};
 pub use consensus::PoCConsensus;
@@ -21,33 +21,33 @@ pub use network::{Node, Network, Packet, PacketType};
 pub use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
 pub use smart_contract::{SmartContract, ExecutionEnvironment};
 pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
-pub use sharding::ShardingManager; // New export
+pub use sharding::ShardingManager;
 
 /// The main struct representing an ICN Node.
-/// It contains the content store, PIT, FIB, blockchain, and CoopVM.
+/// It contains the content store, PIT, FIB, blockchain, CoopVM, and sharding manager.
 pub struct IcnNode {
     pub content_store: Arc<Mutex<ContentStore>>,
     pub pit: Arc<Mutex<PendingInterestTable>>,
     pub fib: Arc<Mutex<ForwardingInformationBase>>,
     pub blockchain: Arc<Mutex<Blockchain>>,
     pub coop_vm: Arc<Mutex<CoopVM>>,
-    pub sharding_manager: Arc<Mutex<ShardingManager>>, // New field
+    pub sharding_manager: Arc<Mutex<ShardingManager>>,
 }
 
 impl IcnNode {
     /// Creates a new instance of the ICN Node.
     pub fn new() -> Self {
-        let blockchain = Blockchain::new();
-        let coop_vm = CoopVM::new(Vec::new()); // Initialize with empty program
-        let sharding_manager = ShardingManager::new(4, 10); // Initialize with 4 shards, 10 nodes per shard
-
+        let consensus = Arc::new(Mutex::new(Consensus::new()));
+        let sharding_manager = ShardingManager::new(4, 10, Arc::clone(&consensus));
+        let blockchain = Blockchain::new(Arc::clone(&consensus), Arc::clone(&sharding_manager));
+        
         IcnNode {
             content_store: Arc::new(Mutex::new(ContentStore::new())),
             pit: Arc::new(Mutex::new(PendingInterestTable::new())),
             fib: Arc::new(Mutex::new(ForwardingInformationBase::new())),
             blockchain: Arc::new(Mutex::new(blockchain)),
             coop_vm: Arc::new(Mutex::new(coop_vm)),
-            sharding_manager: Arc::new(Mutex::new(sharding_manager)),
+            sharding_manager,
         }
     }
 

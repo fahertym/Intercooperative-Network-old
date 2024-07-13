@@ -1,4 +1,4 @@
-use crate::blockchain::{Transaction, Block};
+use crate::blockchain::Transaction;
 use crate::consensus::Consensus;
 use crate::sharding::ShardingManager;
 use std::collections::{HashMap, HashSet};
@@ -62,33 +62,29 @@ impl CrossShardTransactionManager {
     }
 
     pub fn process_cross_shard_transaction(&mut self, transaction_id: &str) -> Result<(), String> {
-        let mut transaction = self.pending_transactions.get_mut(transaction_id)
-            .ok_or("Transaction not found")?;
-
+        let transaction = self.pending_transactions.get(transaction_id)
+            .ok_or("Transaction not found")?
+            .clone();
+    
         if transaction.status != TransactionStatus::Pending {
             return Err("Transaction is not in a pending state".to_string());
         }
-
-        transaction.status = TransactionStatus::InProgress;
-
-        // Verify the transaction
+    
         if !self.verify_transaction(&transaction.transaction) {
-            transaction.status = TransactionStatus::Failed;
+            self.pending_transactions.get_mut(transaction_id).unwrap().status = TransactionStatus::Failed;
             return Err("Transaction verification failed".to_string());
         }
-
-        // Lock the funds in the source shard
+    
         self.lock_funds(&transaction.transaction, transaction.from_shard)?;
-
-        // Create a prepare block in the destination shard
         self.create_prepare_block(&transaction.transaction, transaction.to_shard)?;
-
-        transaction.status = TransactionStatus::Completed;
+    
+        let mut pending_tx = self.pending_transactions.get_mut(transaction_id).unwrap();
+        pending_tx.status = TransactionStatus::Completed;
         self.processed_transactions.insert(transaction_id.to_string());
         Ok(())
     }
 
-    fn verify_transaction(&self, transaction: &Transaction) -> bool {
+    fn verify_transaction(&self, _transaction: &Transaction) -> bool {
         // Implement transaction verification logic
         // This should include checking the signature, balance, etc.
         true // Placeholder
@@ -161,9 +157,9 @@ mod tests {
 
     #[test]
     fn test_cross_shard_transaction_flow() {
-        let sharding_manager = Arc::new(Mutex::new(MockShardingManager::new()));
-        let consensus = Arc::new(Mutex::new(MockConsensus::new()));
-        let mut manager = CrossShardTransactionManager::new(sharding_manager, consensus);
+        let consensus = Arc::new(Mutex::new(Consensus::new()));
+        let sharding_manager = ShardingManager::new(2, 10, Arc::clone(&consensus));
+        let mut manager = CrossShardTransactionManager::new(Arc::clone(&sharding_manager), Arc::clone(&consensus));
 
         let transaction = Transaction::new(
             "Alice".to_string(),
@@ -174,7 +170,7 @@ mod tests {
         );
 
         // Initiate transaction
-        let tx_id = manager.initiate_cross_shard_transaction(transaction.clone()).unwrap();
+        let tx_id = manager.initiate_cross_shard_transaction(transaction).unwrap();
         assert_eq!(manager.get_transaction_status(&tx_id).unwrap(), TransactionStatus::Pending);
 
         // Process transaction
