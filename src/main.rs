@@ -1,139 +1,176 @@
-use icn_node::{
-    IcnNode, CSCLCompiler, Blockchain, Transaction, PoCConsensus, DemocraticSystem,
-    ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, CurrencyType, Node,
-};
-use icn_node::network::network::NodeType;
-use chrono::Utc;
-use std::collections::HashMap;
+use crate::blockchain::Transaction;
+use crate::consensus::Consensus;
+use crate::sharding::ShardingManager;
+use crate::currency::CurrencyType;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
-fn main() {
-    // Initialize the ICN Node with all its components
-    let _node = IcnNode::new();
-    
-    // Initialize the blockchain
-    let mut blockchain = Blockchain::new();
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransactionStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+}
 
-    // Set up the Proof of Contribution consensus mechanism
-    let mut consensus = PoCConsensus::new(0.5, 0.66);
+#[derive(Debug, Clone)]
+pub struct CrossShardTransaction {
+    pub id: String,
+    pub transaction: Transaction,
+    pub from_shard: u64,
+    pub to_shard: u64,
+    pub status: TransactionStatus,
+}
 
-    // Set up the democratic system for governance
-    let mut democratic_system = DemocraticSystem::new();
+pub struct CrossShardTransactionManager {
+    sharding_manager: Arc<Mutex<ShardingManager>>,
+    #[allow(dead_code)]
+    consensus: Arc<Mutex<Consensus>>,
+    pending_transactions: HashMap<String, CrossShardTransaction>,
+    processed_transactions: HashSet<String>,
+}
 
-    // Initialize the network
-    let mut network = Network::new();
-
-    // Add initial members to the consensus mechanism
-    consensus.consensus.add_member("Alice".to_string());
-    consensus.consensus.add_member("Bob".to_string());
-    consensus.consensus.add_member("Charlie".to_string());
-
-    // Create decentralized identities for participants
-    let (alice_did, _) = DecentralizedIdentity::new(HashMap::new());
-    let (bob_did, _) = DecentralizedIdentity::new(HashMap::new());
-
-    // Add initial transactions to the blockchain
-    let tx1 = Transaction::new(
-        alice_did.id.clone(),
-        bob_did.id.clone(),
-        100.0,
-        CurrencyType::BasicNeeds,
-        1000,
-    );
-    blockchain.add_transaction(tx1);
-
-    // Create a block containing the initial transactions
-    if let Err(e) = blockchain.create_block("Alice".to_string()) {
-        println!("Error creating block: {}", e);
+impl CrossShardTransactionManager {
+    pub fn new(sharding_manager: Arc<Mutex<ShardingManager>>, consensus: Arc<Mutex<Consensus>>) -> Self {
+        CrossShardTransactionManager {
+            sharding_manager,
+            consensus,
+            pending_transactions: HashMap::new(),
+            processed_transactions: HashSet::new(),
+        }
     }
 
-    // Create a proposal for the democratic system
-    let proposal_id = democratic_system.create_proposal(
-        "Community Garden".to_string(),
-        "Create a community garden in the local park".to_string(),
-        "Alice".to_string(),
-        chrono::Duration::weeks(1), // 1 week voting period
-        ProposalType::Constitutional,
-        ProposalCategory::Economic,
-        0.51, // 51% quorum
-        Some(Utc::now() + chrono::Duration::days(30)), // Execute in 30 days if passed
-    );
+    pub fn initiate_cross_shard_transaction(&mut self, transaction: Transaction) -> Result<String, String> {
+        let sharding_manager = self.sharding_manager.lock().map_err(|_| "Failed to acquire lock on sharding manager")?;
+        let from_shard = sharding_manager.get_shard_for_address(&transaction.from);
+        let to_shard = sharding_manager.get_shard_for_address(&transaction.to);
 
-    // Participants vote on the proposal
-    if let Err(e) = democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0) {
-        println!("Error voting on proposal: {}", e);
-    }
-    if let Err(e) = democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0) {
-        println!("Error voting on proposal: {}", e);
-    }
+        if from_shard == to_shard {
+            return Err("Not a cross-shard transaction".to_string());
+        }
 
-    // Tally votes for the proposal
-    if let Err(e) = democratic_system.tally_votes(&proposal_id) {
-        println!("Error tallying votes: {}", e);
+        let transaction_id = Uuid::new_v4().to_string();
+        let cross_shard_tx = CrossShardTransaction {
+            id: transaction_id.clone(),
+            transaction,
+            from_shard,
+            to_shard,
+            status: TransactionStatus::Pending,
+        };
+
+        self.pending_transactions.insert(transaction_id.clone(), cross_shard_tx);
+        Ok(transaction_id)
     }
 
-    // Example usage of CSCL compiler
-  let cscl_code = r#"
-    x = 100 + 50;
-    y = 200 - 25;
-    z = x * y / 10;
-    emit("Result", z);
-"#;
+    pub fn process_cross_shard_transaction(&mut self, transaction_id: &str) -> Result<(), String> {
+        let transaction = self.pending_transactions.get(transaction_id)
+            .ok_or("Transaction not found")?
+            .clone();
 
-    let mut compiler = CSCLCompiler::new(cscl_code);
-    match compiler.compile() {
-        Ok(opcodes) => {
-            println!("Compiled CSCL code into {} opcodes", opcodes.len());
+        if transaction.status != TransactionStatus::Pending {
+            return Err("Transaction is not in a pending state".to_string());
+        }
 
-            // Print all compiled opcodes
-            for (i, opcode) in opcodes.iter().enumerate() {
-                println!("Opcode {}: {:?}", i, opcode);
-            }
+        if !self.verify_transaction(&transaction.transaction) {
+            self.pending_transactions.get_mut(transaction_id).unwrap().status = TransactionStatus::Failed;
+            return Err("Transaction verification failed".to_string());
+        }
 
-            // Create a CoopVM instance and execute the compiled code
-            let mut coop_vm = CoopVM::new(opcodes);
-            match coop_vm.run() {
-                Ok(_) => println!("CoopVM execution completed successfully"),
-                Err(e) => println!("CoopVM execution failed: {}", e),
-            }
+        self.lock_funds(&transaction.transaction, transaction.from_shard)?;
+        self.create_prepare_block(&transaction.transaction, transaction.to_shard)?;
 
-            // Print the final state of the CoopVM
-            println!("CoopVM final state:");
-            println!("Stack: {:?}", coop_vm.get_stack());
-            println!("Memory: {:?}", coop_vm.get_memory());
-        },
-        Err(e) => println!("Compilation failed: {}", e),
+        let pending_tx = self.pending_transactions.get_mut(transaction_id).unwrap();
+        pending_tx.status = TransactionStatus::Completed;
+        self.processed_transactions.insert(transaction_id.to_string());
+        Ok(())
     }
 
-    // Simulate some network activity
-    let node1 = Node::new("Node1", NodeType::PersonalDevice, "127.0.0.1:8000");
-    let node2 = Node::new("Node2", NodeType::PersonalDevice, "127.0.0.1:8001");
-    network.add_node(node1.clone());
-    network.add_node(node2.clone());
-
-    // Broadcast the latest block
-    if let Some(latest_block) = blockchain.get_latest_block() {
-        network.broadcast_block(&latest_block);
-    } else {
-        println!("No blocks in the blockchain to broadcast");
+    fn verify_transaction(&self, _transaction: &Transaction) -> bool {
+        // Implement transaction verification logic
+        // This should include checking the signature, balance, etc.
+        true // Placeholder
     }
 
-    // Print final blockchain state
-    println!("Blockchain state:");
-    println!("Number of blocks: {}", blockchain.chain.len());
-    if let Some(latest_block) = blockchain.get_latest_block() {
-        println!("Latest block hash: {}", latest_block.hash);
-    } else {
-        println!("No blocks in the blockchain");
+    fn lock_funds(&self, transaction: &Transaction, shard_id: u64) -> Result<(), String> {
+        let mut sharding_manager = self.sharding_manager.lock().map_err(|_| "Failed to acquire lock on sharding manager")?;
+        sharding_manager.lock_funds(&transaction.from, &transaction.currency_type, transaction.amount, shard_id)
     }
 
-    // Print consensus state
-    println!("Consensus state:");
-    println!("Number of members: {}", consensus.consensus.members.len());
-    println!("Current vote threshold: {}", consensus.vote_threshold);
+    fn create_prepare_block(&self, transaction: &Transaction, shard_id: u64) -> Result<(), String> {
+        let mut sharding_manager = self.sharding_manager.lock().map_err(|_| "Failed to acquire lock on sharding manager")?;
+        sharding_manager.create_prepare_block(transaction, shard_id)
+    }
 
-    // Print democratic system state
-    println!("Democratic system state:");
-    println!("Number of active proposals: {}", democratic_system.list_active_proposals().len());
-    
-    println!("ICN Node simulation completed.");
+    pub fn finalize_cross_shard_transaction(&mut self, transaction_id: &str) -> Result<(), String> {
+        let transaction = self.pending_transactions.get(transaction_id)
+            .ok_or("Transaction not found")?;
+
+        if transaction.status != TransactionStatus::Completed {
+            return Err("Transaction is not in a completed state".to_string());
+        }
+
+        // Commit the changes in both shards
+        self.commit_changes(&transaction.transaction, transaction.from_shard)?;
+        self.commit_changes(&transaction.transaction, transaction.to_shard)?;
+
+        self.processed_transactions.insert(transaction_id.to_string());
+        self.pending_transactions.remove(transaction_id);
+
+        Ok(())
+    }
+
+    fn commit_changes(&self, transaction: &Transaction, shard_id: u64) -> Result<(), String> {
+        let mut sharding_manager = self.sharding_manager.lock().map_err(|_| "Failed to acquire lock on sharding manager")?;
+        sharding_manager.commit_transaction(transaction, shard_id)
+    }
+
+    pub fn get_transaction_status(&self, transaction_id: &str) -> Result<TransactionStatus, String> {
+        if let Some(transaction) = self.pending_transactions.get(transaction_id) {
+            Ok(transaction.status.clone())
+        } else if self.processed_transactions.contains(transaction_id) {
+            Ok(TransactionStatus::Completed)
+        } else {
+            Err("Transaction not found".to_string())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cross_shard_transaction_flow() {
+        let consensus = Arc::new(Mutex::new(Consensus::new()));
+        let sharding_manager = Arc::new(Mutex::new(ShardingManager::new(4, 10, Arc::clone(&consensus))));
+        let mut manager = CrossShardTransactionManager::new(
+            Arc::clone(&sharding_manager),
+            Arc::clone(&consensus)
+        );
+
+        let transaction = Transaction::new(
+            "Alice".to_string(),
+            "Bob".to_string(),
+            100.0,
+            CurrencyType::BasicNeeds,
+            1000,
+        );
+
+        // Initiate transaction
+        let tx_id = manager.initiate_cross_shard_transaction(transaction).unwrap();
+        assert_eq!(manager.get_transaction_status(&tx_id).unwrap(), TransactionStatus::Pending);
+
+        // Process transaction
+        manager.process_cross_shard_transaction(&tx_id).unwrap();
+        assert_eq!(manager.get_transaction_status(&tx_id).unwrap(), TransactionStatus::Completed);
+
+        // Finalize transaction
+        manager.finalize_cross_shard_transaction(&tx_id).unwrap();
+        assert_eq!(manager.get_transaction_status(&tx_id).unwrap(), TransactionStatus::Completed);
+
+        // Verify transaction is no longer in pending_transactions
+        assert!(manager.pending_transactions.is_empty());
+        assert!(manager.processed_transactions.contains(&tx_id));
+    }
 }
