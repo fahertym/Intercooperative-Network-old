@@ -1,7 +1,6 @@
 use std::sync::{Arc, Mutex};
 use std::error::Error;
 use crate::sharding::{ShardingManager, ShardingManagerTrait};
-use crate::sharding::cross_shard_transaction_manager;
 
 pub mod blockchain;
 pub mod consensus;
@@ -36,7 +35,6 @@ pub struct IcnNode {
 impl IcnNode {
     pub fn new() -> Self {
         let consensus = Arc::new(Mutex::new(Consensus::new()));
-        // Correct instantiation to avoid double boxing
         let sharding_manager = Arc::new(Mutex::new(ShardingManager::new(4, 10, Arc::clone(&consensus))));
         let blockchain = Blockchain::new(Arc::clone(&consensus), Arc::clone(&sharding_manager) as Arc<Mutex<dyn ShardingManagerTrait + Send>>);
         let coop_vm = CoopVM::new(Vec::new());

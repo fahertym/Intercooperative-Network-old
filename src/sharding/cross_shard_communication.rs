@@ -1,9 +1,9 @@
-use crate::blockchain::Transaction;
-use crate::consensus::Consensus;
 use crate::sharding::ShardingManager;
-use std::collections::{HashMap, HashSet};
+use crate::consensus::Consensus;
+use crate::blockchain::Transaction;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransactionStatus {
@@ -24,6 +24,7 @@ pub struct CrossShardTransaction {
 
 pub struct CrossShardTransactionManager {
     sharding_manager: Arc<Mutex<ShardingManager>>,
+    #[allow(dead_code)]
     consensus: Arc<Mutex<Consensus>>,
     pending_transactions: HashMap<String, CrossShardTransaction>,
     processed_transactions: HashSet<String>,
@@ -62,33 +63,29 @@ impl CrossShardTransactionManager {
     }
 
     pub fn process_cross_shard_transaction(&mut self, transaction_id: &str) -> Result<(), String> {
-        let mut transaction = self.pending_transactions.get_mut(transaction_id)
-            .ok_or("Transaction not found")?;
+        let transaction = self.pending_transactions.get(transaction_id)
+            .ok_or("Transaction not found")?
+            .clone();
 
         if transaction.status != TransactionStatus::Pending {
             return Err("Transaction is not in a pending state".to_string());
         }
 
-        transaction.status = TransactionStatus::InProgress;
-
-        // Verify the transaction
         if !self.verify_transaction(&transaction.transaction) {
-            transaction.status = TransactionStatus::Failed;
+            self.pending_transactions.get_mut(transaction_id).unwrap().status = TransactionStatus::Failed;
             return Err("Transaction verification failed".to_string());
         }
 
-        // Lock the funds in the source shard
         self.lock_funds(&transaction.transaction, transaction.from_shard)?;
-
-        // Create a prepare block in the destination shard
         self.create_prepare_block(&transaction.transaction, transaction.to_shard)?;
 
-        transaction.status = TransactionStatus::Completed;
+        let pending_tx = self.pending_transactions.get_mut(transaction_id).unwrap();
+        pending_tx.status = TransactionStatus::Completed;
         self.processed_transactions.insert(transaction_id.to_string());
         Ok(())
     }
 
-    fn verify_transaction(&self, transaction: &Transaction) -> bool {
+    fn verify_transaction(&self, _transaction: &Transaction) -> bool {
         // Implement transaction verification logic
         // This should include checking the signature, balance, etc.
         true // Placeholder
@@ -141,29 +138,50 @@ impl CrossShardTransactionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blockchain::Transaction;
     use crate::currency::CurrencyType;
 
-    // Implement mock ShardingManager and Consensus for testing
-    struct MockShardingManager;
-    impl MockShardingManager {
-        fn new() -> Self { MockShardingManager }
-        fn get_shard_for_address(&self, _address: &str) -> u64 { 0 }
-        fn lock_funds(&self, _from: &str, _currency_type: &CurrencyType, _amount: f64, _shard_id: u64) -> Result<(), String> { Ok(()) }
-        fn create_prepare_block(&self, _transaction: &Transaction, _shard_id: u64) -> Result<(), String> { Ok(()) }
-        fn commit_transaction(&self, _transaction: &Transaction, _shard_id: u64) -> Result<(), String> { Ok(()) }
+    #[derive(Debug)]
+    pub struct MockShardingManager;
+
+    impl ShardingManager for MockShardingManager {
+        fn new(_shards: usize, _nodes_per_shard: usize, _consensus: Arc<Mutex<Consensus>>) -> Self {
+            MockShardingManager
+        }
+
+        fn get_shard_for_address(&self, _address: &str) -> u64 {
+            1 // Placeholder shard ID
+        }
+
+        fn lock_funds(&self, _address: &str, _currency_type: &CurrencyType, _amount: f64, _shard_id: u64) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn create_prepare_block(&self, _transaction: &Transaction, _shard_id: u64) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn commit_transaction(&self, _transaction: &Transaction, _shard_id: u64) -> Result<(), String> {
+            Ok(())
+        }
     }
 
-    struct MockConsensus;
-    impl MockConsensus {
-        fn new() -> Self { MockConsensus }
+    #[derive(Debug)]
+    pub struct MockConsensus;
+
+    impl Consensus {
+        pub fn new() -> Self {
+            MockConsensus
+        }
     }
 
     #[test]
     fn test_cross_shard_transaction_flow() {
-        let sharding_manager = Arc::new(Mutex::new(MockShardingManager::new()));
         let consensus = Arc::new(Mutex::new(MockConsensus::new()));
-        let mut manager = CrossShardTransactionManager::new(sharding_manager, consensus);
+        let sharding_manager = Arc::new(Mutex::new(MockShardingManager));
+        let mut manager = CrossShardTransactionManager::new(
+            Arc::clone(&sharding_manager),
+            Arc::clone(&consensus)
+        );
 
         let transaction = Transaction::new(
             "Alice".to_string(),
@@ -174,7 +192,7 @@ mod tests {
         );
 
         // Initiate transaction
-        let tx_id = manager.initiate_cross_shard_transaction(transaction.clone()).unwrap();
+        let tx_id = manager.initiate_cross_shard_transaction(transaction).unwrap();
         assert_eq!(manager.get_transaction_status(&tx_id).unwrap(), TransactionStatus::Pending);
 
         // Process transaction

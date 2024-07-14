@@ -1,22 +1,30 @@
-use crate::blockchain::{Block, Transaction};
-use crate::currency::CurrencyType;
-use crate::consensus::Consensus;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use cross_shard_transaction_manager::{CrossShardTransactionManager, ShardingManagerTrait};
 use sha2::{Sha256, Digest};
+use crate::blockchain::{Block, Transaction};
+use crate::consensus::Consensus;
+use crate::currency::CurrencyType;
+use std::sync::{Arc, Mutex};
 
-// ShardingManager structure
-#[derive(Clone)] // Adding Clone trait
+pub mod cross_shard_transaction_manager;
+use cross_shard_transaction_manager::CrossShardTransactionManager;
+
+pub trait ShardingManagerTrait: Send + Sync {
+    fn get_shard_for_address(&self, address: &str) -> u64;
+    fn lock_funds(&mut self, from: &str, currency_type: &CurrencyType, amount: f64, shard_id: u64) -> Result<(), String>;
+    fn create_prepare_block(&mut self, transaction: &Transaction, shard_id: u64) -> Result<(), String>;
+    fn commit_transaction(&mut self, transaction: &Transaction, shard_id: u64) -> Result<(), String>;
+    fn get_balance(&self, address: &str, currency_type: &CurrencyType) -> f64;
+}
+
+#[derive(Clone)]
 pub struct ShardingManager {
     pub shards: HashMap<u64, Arc<Mutex<Shard>>>,
     pub shard_count: u64,
     pub nodes_per_shard: usize,
     pub address_to_shard: HashMap<String, u64>,
-    pub cross_shard_tx_manager: Option<Arc<Mutex<CrossShardTransactionManager<Self>>>>,
+    pub cross_shard_tx_manager: Option<Arc<Mutex<CrossShardTransactionManager>>>,
 }
 
-// Shard structure
 pub struct Shard {
     pub id: u64,
     pub blockchain: Vec<Block>,
@@ -24,9 +32,7 @@ pub struct Shard {
     pub locked_funds: HashMap<String, HashMap<CurrencyType, f64>>,
 }
 
-// Implementation of ShardingManager
 impl ShardingManager {
-    // Create a new ShardingManager
     pub fn new(shard_count: u64, nodes_per_shard: usize, consensus: Arc<Mutex<Consensus>>) -> Self {
         let mut shards = HashMap::new();
         for i in 0..shard_count {
@@ -55,45 +61,28 @@ impl ShardingManager {
         sharding_manager
     }
 
-    // Add address to shard
     pub fn add_address_to_shard(&mut self, address: String, shard_id: u64) {
         self.address_to_shard.insert(address, shard_id);
     }
 
-    // Initialize balance for an address
-    pub fn initialize_balance(&mut self, address: String, currency_type: CurrencyType, amount: f64) {
+    pub fn initialize_balance(&mut self, address: String, currency_type: CurrencyType, amount: f64) -> Result<(), String> {
         let shard_id = self.get_shard_for_address(&address);
         if let Some(shard) = self.shards.get_mut(&shard_id) {
-            let mut shard = shard.lock().unwrap();
+            let mut shard = shard.lock().map_err(|_| "Failed to acquire lock on shard")?;
             shard.balances
                 .entry(address)
                 .or_insert_with(HashMap::new)
                 .insert(currency_type, amount);
         }
+        Ok(())
     }
 
-    // Get balance for an address and currency type
-    pub fn get_balance(&self, address: &str, currency_type: &CurrencyType) -> f64 {
-        let shard_id = self.get_shard_for_address(address);
-        if let Some(shard) = self.shards.get(&shard_id) {
-            let shard = shard.lock().unwrap();
-            shard.balances
-                .get(address)
-                .and_then(|balances| balances.get(currency_type))
-                .cloned()
-                .unwrap_or(0.0)
-        } else {
-            0.0
-        }
-    }
-
-    // Process a cross-shard transaction
     pub fn process_cross_shard_transaction(&self, transaction: Transaction) -> Result<(), String> {
         let cross_shard_tx_manager = self.cross_shard_tx_manager.as_ref().ok_or("Cross-shard transaction manager not initialized")?;
         let tx_manager_arc = Arc::clone(cross_shard_tx_manager);
         let mut manager = tx_manager_arc.lock().map_err(|_| "Failed to acquire lock on cross shard transaction manager")?;
         let tx_id = manager.initiate_cross_shard_transaction(transaction)?;
-        drop(manager); // Explicitly drop the lock before proceeding
+        drop(manager);
         {
             let mut manager = tx_manager_arc.lock().map_err(|_| "Failed to acquire lock on cross shard transaction manager")?;
             manager.process_cross_shard_transaction(&tx_id)?;
@@ -105,7 +94,6 @@ impl ShardingManager {
         Ok(())
     }
 
-    // Hash data using SHA-256
     fn hash_data(&self, data: &[u8]) -> u64 {
         let mut hasher = Sha256::new();
         hasher.update(data);
@@ -117,7 +105,6 @@ impl ShardingManager {
     }
 }
 
-// Implementing the ShardingManagerTrait for ShardingManager
 impl ShardingManagerTrait for ShardingManager {
     fn get_shard_for_address(&self, address: &str) -> u64 {
         *self.address_to_shard.get(address).unwrap_or(&0)
@@ -184,7 +171,6 @@ impl ShardingManagerTrait for ShardingManager {
     }
 }
 
-// Test cases for ShardingManager
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,7 +191,7 @@ mod tests {
         let consensus = Arc::new(Mutex::new(Consensus::new()));
         let mut manager = ShardingManager::new(2, 10, Arc::clone(&consensus));
 
-        manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+        manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0).unwrap();
         manager.add_address_to_shard("Alice".to_string(), 0);
         manager.add_address_to_shard("Bob".to_string(), 1);
 

@@ -1,10 +1,9 @@
 use crate::blockchain::Transaction;
 use crate::consensus::Consensus;
-use crate::sharding::ShardingManager;
-use crate::currency::CurrencyType;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+use super::ShardingManagerTrait;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TransactionStatus {
@@ -24,14 +23,18 @@ pub struct CrossShardTransaction {
 }
 
 pub struct CrossShardTransactionManager {
-    sharding_manager: Arc<Mutex<ShardingManager>>,
+    sharding_manager: Arc<Mutex<dyn ShardingManagerTrait + Send + 'static>>,
+    #[allow(dead_code)]
     consensus: Arc<Mutex<Consensus>>,
     pending_transactions: HashMap<String, CrossShardTransaction>,
     processed_transactions: HashSet<String>,
 }
 
 impl CrossShardTransactionManager {
-    pub fn new(sharding_manager: Arc<Mutex<ShardingManager>>, consensus: Arc<Mutex<Consensus>>) -> Self {
+    pub fn new(
+        sharding_manager: Arc<Mutex<dyn ShardingManagerTrait + Send + 'static>>,
+        consensus: Arc<Mutex<Consensus>>
+    ) -> Self {
         CrossShardTransactionManager {
             sharding_manager,
             consensus,
@@ -85,10 +88,9 @@ impl CrossShardTransactionManager {
         Ok(())
     }
 
-    fn verify_transaction(&self, transaction: &Transaction) -> bool {
+    fn verify_transaction(&self, _transaction: &Transaction) -> bool {
         // Implement transaction verification logic
-        // This should include checking the signature, balance, etc.
-        true // Placeholder
+        true // Placeholder implementation
     }
 
     fn lock_funds(&self, transaction: &Transaction, shard_id: u64) -> Result<(), String> {
@@ -109,7 +111,6 @@ impl CrossShardTransactionManager {
             return Err("Transaction is not in a completed state".to_string());
         }
 
-        // Commit the changes in both shards
         self.commit_changes(&transaction.transaction, transaction.from_shard)?;
         self.commit_changes(&transaction.transaction, transaction.to_shard)?;
 
@@ -135,29 +136,40 @@ impl CrossShardTransactionManager {
     }
 }
 
+// Tests for CrossShardTransactionManager
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network::Node;
-    use crate::network::network::NodeType;
+    use crate::currency::CurrencyType;
 
-    struct MockShardingManager;
-    impl MockShardingManager {
-        fn new() -> Self { MockShardingManager }
-        fn get_shard_for_address(&self, _address: &str) -> u64 { 1 }
-        fn lock_funds(&self, _from: &str, _currency_type: &CurrencyType, _amount: f64, _shard_id: u64) -> Result<(), String> { Ok(()) }
-        fn create_prepare_block(&self, _transaction: &Transaction, _shard_id: u64) -> Result<(), String> { Ok(()) }
-        fn commit_transaction(&self, _transaction: &Transaction, _shard_id: u64) -> Result<(), String> { Ok(()) }
+    // Mock implementation of ShardingManagerTrait for testing
+    struct MockShardingManager {
+        shard_map: HashMap<String, u64>,
     }
 
+    impl ShardingManagerTrait for MockShardingManager {
+        fn get_shard_for_address(&self, address: &str) -> u64 {
+            *self.shard_map.get(address).unwrap_or(&0)
+        }
+
+        fn lock_funds(&mut self, _from: &str, _currency_type: &CurrencyType, _amount: f64, _shard_id: u64) -> Result<(), String> { Ok(()) }
+
+        fn create_prepare_block(&mut self, _transaction: &Transaction, _shard_id: u64) -> Result<(), String> { Ok(()) }
+
+        fn commit_transaction(&mut self, _transaction: &Transaction, _shard_id: u64) -> Result<(), String> { Ok(()) }
+
+        fn get_balance(&self, _address: &str, _currency_type: &CurrencyType) -> f64 { 1000.0 }
+    }
+
+    // Test the cross-shard transaction flow
     #[test]
     fn test_cross_shard_transaction_flow() {
+        let mock_sharding_manager = MockShardingManager {
+            shard_map: [("Alice".to_string(), 0), ("Bob".to_string(), 1)].iter().cloned().collect(),
+        };
+        let sharding_manager = Arc::new(Mutex::new(mock_sharding_manager));
         let consensus = Arc::new(Mutex::new(Consensus::new()));
-        let sharding_manager = Arc::new(Mutex::new(MockShardingManager::new()));
-        let mut manager = CrossShardTransactionManager::new(
-            Arc::clone(&sharding_manager),
-            Arc::clone(&consensus)
-        );
+        let mut manager = CrossShardTransactionManager::new(sharding_manager, consensus);
 
         let transaction = Transaction::new(
             "Alice".to_string(),
