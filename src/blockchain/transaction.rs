@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
 use crate::smart_contract::SmartContract;
 use crate::currency::CurrencyType;
-use rand::rngs::OsRng;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Transaction {

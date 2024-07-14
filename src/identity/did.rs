@@ -37,7 +37,7 @@ mod public_key_serde {
 
 impl DecentralizedIdentity {
     pub fn new(attributes: HashMap<String, String>) -> (Self, Keypair) {
-        let mut csprng = OsRng{};
+        let mut csprng = OsRng;
         let keypair: Keypair = Keypair::generate(&mut csprng);
         let public_key = keypair.public;
 
