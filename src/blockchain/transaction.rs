@@ -64,10 +64,11 @@ impl Transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::rngs::OsRng;
 
     #[test]
     fn test_transaction_sign_and_verify() {
-        let mut csprng = OsRng{};
+        let mut csprng = OsRng;
         let keypair: Keypair = Keypair::generate(&mut csprng);
 
         let mut transaction = Transaction::new(

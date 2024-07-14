@@ -38,7 +38,7 @@ impl Blockchain {
     }
 
     pub fn add_transaction(&mut self, transaction: Transaction) -> BlockchainResult<()> {
-        let sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::LockError("Failed to acquire lock on sharding manager".to_string()))?;
+        let sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::MutexLockError)?;
         let from_shard = sharding_manager.get_shard_for_address(&transaction.from);
         let to_shard = sharding_manager.get_shard_for_address(&transaction.to);
         drop(sharding_manager);
@@ -55,7 +55,7 @@ impl Blockchain {
     }
 
     pub fn create_block(&mut self) -> BlockchainResult<()> {
-        let previous_block = self.chain.last().ok_or(BlockchainError::EmptyChain)?;
+        let previous_block = self.chain.last().ok_or(BlockchainError::EmptyBlockchain)?;
         let new_block = Block::new(self.chain.len() as u64, self.pending_transactions.clone(), previous_block.hash.clone());
 
         self.validate_block(&new_block)?;
@@ -86,7 +86,7 @@ impl Blockchain {
     }
 
     pub fn validate_transaction(&self, transaction: &Transaction) -> BlockchainResult<()> {
-        let sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::LockError("Failed to acquire lock on sharding manager".to_string()))?;
+        let sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::MutexLockError)?;
         let balance = sharding_manager.get_balance(&transaction.from, &transaction.currency_type);
         if balance < transaction.amount {
             return Err(BlockchainError::InvalidTransaction("Insufficient balance".to_string()));
@@ -147,7 +147,7 @@ impl Blockchain {
     }
 
     pub fn execute_smart_contracts(&mut self) -> BlockchainResult<()> {
-        let block = self.chain.last_mut().ok_or(BlockchainError::EmptyChain)?;
+        let block = self.chain.last_mut().ok_or(BlockchainError::EmptyBlockchain)?;
         let transactions = block.transactions.clone();
         for transaction in transactions {
             if let Some(ref contract) = transaction.smart_contract {
@@ -181,7 +181,7 @@ impl Blockchain {
         self.pending_transactions.clear();
 
         for transaction in transactions_to_process {
-            let sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::LockError("Failed to acquire lock on sharding manager".to_string()))?;
+            let sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::MutexLockError)?;
             let from_shard = sharding_manager.get_shard_for_address(&transaction.from);
             let to_shard = sharding_manager.get_shard_for_address(&transaction.to);
             drop(sharding_manager);
@@ -197,7 +197,7 @@ impl Blockchain {
     }
 
     pub fn process_cross_shard_transaction(&mut self, transaction: Transaction) -> BlockchainResult<()> {
-        let mut sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::LockError("Failed to acquire lock on sharding manager".to_string()))?;
+        let mut sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::MutexLockError)?;
 
         let from_shard = sharding_manager.get_shard_for_address(&transaction.from);
         let to_shard = sharding_manager.get_shard_for_address(&transaction.to);
@@ -213,7 +213,7 @@ impl Blockchain {
     }
 
     fn execute_transaction(&mut self, transaction: &Transaction) -> BlockchainResult<()> {
-        let mut sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::LockError("Failed to acquire lock on sharding manager".to_string()))?;
+        let mut sharding_manager = self.sharding_manager.lock().map_err(|_| BlockchainError::MutexLockError)?;
         let shard_id = sharding_manager.get_shard_for_address(&transaction.from);
 
         sharding_manager.lock_funds(&transaction.from, &transaction.currency_type, transaction.amount, shard_id)
@@ -261,7 +261,7 @@ mod tests {
         let sharding_manager = Arc::new(Mutex::new(MockShardingManager));
         let mut blockchain = Blockchain::new(consensus, sharding_manager);
 
-        let mut csprng = OsRng{};
+        let mut csprng = OsRng;
         let keypair: Keypair = Keypair::generate(&mut csprng);
         let mut transaction = Transaction::new(
             "Alice".to_string(),
@@ -282,7 +282,7 @@ mod tests {
         let sharding_manager = Arc::new(Mutex::new(MockShardingManager));
         let mut blockchain = Blockchain::new(consensus, sharding_manager);
 
-        let mut csprng = OsRng{};
+        let mut csprng = OsRng;
         let keypair: Keypair = Keypair::generate(&mut csprng);
         let mut transaction = Transaction::new(
             "Alice".to_string(),
@@ -304,7 +304,7 @@ mod tests {
         let sharding_manager = Arc::new(Mutex::new(MockShardingManager));
         let mut blockchain = Blockchain::new(consensus, sharding_manager);
 
-        let mut csprng = OsRng{};
+        let mut csprng = OsRng;
         let keypair: Keypair = Keypair::generate(&mut csprng);
         let mut transaction = Transaction::new(
             "Alice".to_string(),
