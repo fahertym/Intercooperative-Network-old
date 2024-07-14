@@ -18,7 +18,20 @@ pub use consensus::Consensus;
 pub use currency::{CurrencySystem, CurrencyType, Wallet};
 pub use governance::{DemocraticSystem, ProposalCategory, ProposalType};
 pub use identity::{DecentralizedIdentity, DidManager};
-pub use network::{Network, Node, Packet, PacketType};
+pub use network::{Network, Node};
+
+#[derive(Clone)]
+pub struct Packet {
+    pub packet_type: PacketType,
+    pub name: String,
+    pub content: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq)]
+pub enum PacketType {
+    Interest,
+    Data,
+}
 pub use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
 pub use smart_contract::{ExecutionEnvironment, SmartContract};
 pub use vm::{CSCLCompiler, CoopVM, Opcode, Value};
@@ -107,6 +120,7 @@ impl IcnNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::SocketAddr;
 
     #[test]
     fn test_icn_node_creation() {
@@ -119,6 +133,11 @@ mod tests {
     #[test]
     fn test_packet_processing() {
         let node = IcnNode::new();
+        
+        // Add a route to the FIB
+        let addr: SocketAddr = "127.0.0.1:8000".parse().unwrap();
+        node.fib.lock().unwrap().add_entry("test_data".to_string(), addr);
+
         let interest_packet = Packet {
             packet_type: PacketType::Interest,
             name: "test_data".to_string(),
