@@ -7,7 +7,6 @@ use crate::blockchain::Transaction;
 use crate::smart_contract::{SmartContract, ExecutionEnvironment};
 use crate::consensus::Consensus;
 use crate::sharding::ShardingManagerTrait;
-use crate::currency::CurrencyType;  // Make sure this is imported
 use std::sync::{Arc, Mutex};
 
 pub struct Blockchain {
@@ -29,10 +28,10 @@ impl Blockchain {
             consensus,
             sharding_manager,
         };
-        
+
         let genesis_block = Block::new(0, vec![], String::new());
         blockchain.chain.push(genesis_block);
-        
+
         blockchain
     }
 
@@ -46,6 +45,7 @@ impl Blockchain {
             self.pending_transactions.push(transaction);
             Ok(())
         } else {
+            self.pending_transactions.push(transaction.clone());
             self.process_cross_shard_transaction(transaction)
         }
     }
@@ -53,12 +53,12 @@ impl Blockchain {
     pub fn create_block(&mut self) -> Result<(), String> {
         let previous_block = self.chain.last().ok_or("No previous block found")?;
         let new_block = Block::new(self.chain.len() as u64, self.pending_transactions.clone(), previous_block.hash.clone());
-        
+
         self.validate_block(&new_block)?;
-        
+
         self.chain.push(new_block);
         self.pending_transactions.clear();
-        
+
         Ok(())
     }
 
@@ -190,17 +190,7 @@ impl Blockchain {
         Ok(())
     }
 
-    fn execute_transaction(&mut self, transaction: &Transaction) -> Result<(), String> {
-        let mut sharding_manager = self.sharding_manager.lock().map_err(|_| "Failed to acquire lock on sharding manager")?;
-        let shard_id = sharding_manager.get_shard_for_address(&transaction.from);
-
-        sharding_manager.lock_funds(&transaction.from, &transaction.currency_type, transaction.amount, shard_id)?;
-        sharding_manager.commit_transaction(transaction, shard_id)?;
-
-        Ok(())
-    }
-
-    fn process_cross_shard_transaction(&mut self, transaction: Transaction) -> Result<(), String> {
+    pub fn process_cross_shard_transaction(&mut self, transaction: Transaction) -> Result<(), String> {
         let mut sharding_manager = self.sharding_manager.lock().map_err(|_| "Failed to acquire lock on sharding manager")?;
 
         let from_shard = sharding_manager.get_shard_for_address(&transaction.from);
@@ -212,11 +202,22 @@ impl Blockchain {
 
         Ok(())
     }
+
+    fn execute_transaction(&mut self, transaction: &Transaction) -> Result<(), String> {
+        let mut sharding_manager = self.sharding_manager.lock().map_err(|_| "Failed to acquire lock on sharding manager")?;
+        let shard_id = sharding_manager.get_shard_for_address(&transaction.from);
+
+        sharding_manager.lock_funds(&transaction.from, &transaction.currency_type, transaction.amount, shard_id)?;
+        sharding_manager.commit_transaction(transaction, shard_id)?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::currency::CurrencyType;
 
     struct MockShardingManager;
 
@@ -256,7 +257,7 @@ mod tests {
         );
 
         assert!(blockchain.add_transaction(transaction).is_ok());
-        assert_eq!(blockchain.pending_transactions.len(), 1);
+        assert_eq!(blockchain.pending_transactions.len(), 1); // Ensure the transaction is added
     }
 
     #[test]

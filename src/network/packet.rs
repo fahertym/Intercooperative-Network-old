@@ -1,8 +1,9 @@
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PacketType {
     Interest,
     Data,
 }
+
 
 #[derive(Clone, Debug)]
 pub struct Packet {

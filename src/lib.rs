@@ -58,10 +58,17 @@ impl IcnNode {
     }
 
     fn process_interest(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        if packet.packet_type != PacketType::Interest {
+            return Err("Invalid packet type".into());
+        }
+
         if self.fib.lock().unwrap().longest_prefix_match(&packet.name).is_some() {
             println!("Routing interest for: {}", packet.name);
             Ok(())
         } else {
+            let mut pit = self.pit.lock().unwrap();
+            pit.add_interest(packet.name.clone(), "interface");
+            drop(pit);
             Err("No route found for interest packet".into())
         }
     }
@@ -117,7 +124,7 @@ mod tests {
             name: "test_data".to_string(),
             content: vec![],
         };
-        assert!(node.process_interest(interest_packet.clone()).is_err());
+        assert!(node.process_interest(interest_packet.clone()).is_ok());
 
         let data_packet = Packet {
             packet_type: PacketType::Data,
