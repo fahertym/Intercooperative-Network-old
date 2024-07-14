@@ -12,6 +12,7 @@ pub mod node;
 pub mod sharding;
 pub mod smart_contract;
 pub mod vm;
+pub mod error;
 
 pub use blockchain::{Block, Blockchain, Transaction};
 pub use consensus::Consensus;
@@ -48,8 +49,8 @@ pub struct IcnNode {
 impl IcnNode {
     pub fn new() -> Self {
         let consensus = Arc::new(Mutex::new(Consensus::new()));
-        let sharding_manager = Arc::new(Mutex::new(ShardingManager::new(4, 10, Arc::clone(&consensus))));
-        let blockchain = Blockchain::new(Arc::clone(&consensus), Arc::clone(&sharding_manager) as Arc<Mutex<dyn ShardingManagerTrait + Send>>);
+        let sharding_manager = Arc::new(Mutex::new(ShardingManager::new(4, 10, consensus.clone())));
+        let blockchain = Blockchain::new(consensus.clone(), sharding_manager.clone());
         let coop_vm = CoopVM::new(Vec::new());
 
         IcnNode {

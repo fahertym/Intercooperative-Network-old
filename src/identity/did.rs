@@ -1,30 +1,19 @@
-// File: src/did.rs
-
-// ==================================================
-// Imports
-// ==================================================
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Verifier};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// ==================================================
-// Enums and Structs for Decentralized Identity
-// ==================================================
-
-// Struct to represent a decentralized identity
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DecentralizedIdentity {
-    pub id: String,                      // Unique identifier for the DID
+    pub id: String,
     #[serde(with = "public_key_serde")]
-    pub public_key: PublicKey,           // Public key for the DID
-    pub created_at: DateTime<Utc>,       // Timestamp of creation
-    pub reputation: f64,                 // Reputation score (0 to 100)
-    pub attributes: HashMap<String, String>, // Additional attributes
+    pub public_key: PublicKey,
+    pub created_at: DateTime<Utc>,
+    pub reputation: f64,
+    pub attributes: HashMap<String, String>,
 }
 
-// Module for (de)serialization of the public key
 mod public_key_serde {
     use ed25519_dalek::PublicKey;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -46,55 +35,42 @@ mod public_key_serde {
     }
 }
 
-// Implementation of DecentralizedIdentity
 impl DecentralizedIdentity {
-    // Function to create a new decentralized identity
     pub fn new(attributes: HashMap<String, String>) -> (Self, Keypair) {
-        let mut csprng = OsRng {};
-        let keypair: Keypair = Keypair::generate(&mut csprng); // Generate a key pair
+        let mut csprng = OsRng{};
+        let keypair: Keypair = Keypair::generate(&mut csprng);
         let public_key = keypair.public;
 
-        // Generate a unique ID based on the public key
         let id = format!("did:icn:{}", hex::encode(public_key.to_bytes()));
 
-        // Return the new identity and the key pair
         (
             Self {
                 id,
                 public_key,
                 created_at: Utc::now(),
-                reputation: 1.0, // Initial reputation
+                reputation: 1.0,
                 attributes,
             },
             keypair,
         )
     }
 
-    // Function to verify a signature
     pub fn verify_signature(&self, message: &[u8], signature: &Signature) -> bool {
         self.public_key.verify(message, signature).is_ok()
     }
 }
 
-// ==================================================
-// Struct to Manage Decentralized Identities
-// ==================================================
-
-// Struct to manage decentralized identities
 pub struct DidManager {
-    identities: HashMap<String, DecentralizedIdentity>, // Map of DIDs to their identities
+    identities: HashMap<String, DecentralizedIdentity>,
 }
 
-// Implementation of DidManager
 impl DidManager {
-    // Constructor to create a new DidManager
     pub fn new() -> Self {
         Self {
             identities: HashMap::new(),
         }
     }
 
-    // Function to register a decentralized identity
     pub fn register_did(&mut self, did: DecentralizedIdentity) -> Result<(), String> {
         if self.identities.contains_key(&did.id) {
             return Err("DiD already exists".to_string());
@@ -103,20 +79,17 @@ impl DidManager {
         Ok(())
     }
 
-    // Function to get a decentralized identity by ID
     pub fn get_did(&self, id: &str) -> Option<&DecentralizedIdentity> {
         self.identities.get(id)
     }
 
-    // Function to update the reputation of a decentralized identity
     pub fn update_reputation(&mut self, id: &str, delta: f64) -> Result<(), String> {
         let did = self.identities.get_mut(id).ok_or("DiD not found")?;
         did.reputation += delta;
-        did.reputation = did.reputation.max(0.0).min(100.0); // Clamp reputation between 0 and 100
+        did.reputation = did.reputation.max(0.0).min(100.0);
         Ok(())
     }
 
-    // Function to verify the identity of a decentralized identity
     pub fn verify_identity(&self, id: &str, message: &[u8], signature: &Signature) -> bool {
         if let Some(did) = self.identities.get(id) {
             did.verify_signature(message, signature)
@@ -125,14 +98,12 @@ impl DidManager {
         }
     }
 
-    // Function to update the attributes of a decentralized identity
     pub fn update_attributes(&mut self, id: &str, attributes: HashMap<String, String>) -> Result<(), String> {
         let did = self.identities.get_mut(id).ok_or("DiD not found")?;
         did.attributes.extend(attributes);
         Ok(())
     }
 
-    // Function to revoke a decentralized identity
     pub fn revoke_did(&mut self, id: &str) -> Result<(), String> {
         if self.identities.remove(id).is_some() {
             Ok(())
@@ -141,15 +112,11 @@ impl DidManager {
         }
     }
 
-    // Function to list all decentralized identities
     pub fn list_dids(&self) -> Vec<String> {
         self.identities.keys().cloned().collect()
     }
 }
 
-// ==================================================
-// Unit Tests for Decentralized Identity
-// ==================================================
 #[cfg(test)]
 mod tests {
     use super::*;

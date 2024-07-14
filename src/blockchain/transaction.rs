@@ -1,9 +1,8 @@
-// src/blockchain/transaction.rs
-
 use serde::{Deserialize, Serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
 use crate::smart_contract::SmartContract;
 use crate::currency::CurrencyType;
+use rand::rngs::OsRng;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Transaction {
@@ -65,7 +64,6 @@ impl Transaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::OsRng;
 
     #[test]
     fn test_transaction_sign_and_verify() {
