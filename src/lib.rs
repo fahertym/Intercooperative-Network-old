@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::error::Error;
+use crate::sharding::{ShardingManager, ShardingManagerTrait};
+use crate::sharding::cross_shard_transaction_manager;
 
 pub mod blockchain;
 pub mod consensus;
@@ -8,39 +10,37 @@ pub mod governance;
 pub mod identity;
 pub mod network;
 pub mod node;
+pub mod sharding;
 pub mod smart_contract;
 pub mod vm;
-pub mod sharding;
 
-pub use blockchain::{Block, Transaction, Blockchain};
-pub use consensus::PoCConsensus;
-pub use currency::{CurrencyType, CurrencySystem, Wallet};
+pub use blockchain::{Block, Blockchain, Transaction};
+pub use consensus::Consensus;
+pub use currency::{CurrencySystem, CurrencyType, Wallet};
 pub use governance::{DemocraticSystem, ProposalCategory, ProposalType};
 pub use identity::{DecentralizedIdentity, DidManager};
-pub use network::{Node, Network, Packet, PacketType};
+pub use network::{Network, Node, Packet, PacketType};
 pub use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
-pub use smart_contract::{SmartContract, ExecutionEnvironment};
-pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
-pub use sharding::ShardingManager;
+pub use smart_contract::{ExecutionEnvironment, SmartContract};
+pub use vm::{CSCLCompiler, CoopVM, Opcode, Value};
 
-/// The main struct representing an ICN Node.
-/// It contains the content store, PIT, FIB, blockchain, CoopVM, and sharding manager.
 pub struct IcnNode {
     pub content_store: Arc<Mutex<ContentStore>>,
     pub pit: Arc<Mutex<PendingInterestTable>>,
     pub fib: Arc<Mutex<ForwardingInformationBase>>,
     pub blockchain: Arc<Mutex<Blockchain>>,
     pub coop_vm: Arc<Mutex<CoopVM>>,
-    pub sharding_manager: Arc<Mutex<ShardingManager>>,
+    pub sharding_manager: Arc<Mutex<dyn ShardingManagerTrait + Send>>,
 }
 
 impl IcnNode {
-    /// Creates a new instance of the ICN Node.
     pub fn new() -> Self {
         let consensus = Arc::new(Mutex::new(Consensus::new()));
-        let sharding_manager = ShardingManager::new(4, 10, Arc::clone(&consensus));
-        let blockchain = Blockchain::new(Arc::clone(&consensus), Arc::clone(&sharding_manager));
-        
+        // Correct instantiation to avoid double boxing
+        let sharding_manager = Arc::new(Mutex::new(ShardingManager::new(4, 10, Arc::clone(&consensus))));
+        let blockchain = Blockchain::new(Arc::clone(&consensus), Arc::clone(&sharding_manager) as Arc<Mutex<dyn ShardingManagerTrait + Send>>);
+        let coop_vm = CoopVM::new(Vec::new());
+
         IcnNode {
             content_store: Arc::new(Mutex::new(ContentStore::new())),
             pit: Arc::new(Mutex::new(PendingInterestTable::new())),
@@ -51,55 +51,40 @@ impl IcnNode {
         }
     }
 
-    /// Processes a packet, either an interest or a data packet.
-    /// # Arguments
-    /// * `packet` - The packet to be processed.
-    /// # Returns
-    /// Result indicating success or failure.
-    pub fn process_packet(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
-        match packet.packet_type {
-            PacketType::Interest => self.process_interest(packet),
-            PacketType::Data => self.process_data(packet),
-        }
-    }
-
-    /// Processes an interest packet by checking the content store and PIT.
-    /// # Arguments
-    /// * `packet` - The interest packet to be processed.
-    /// # Returns
-    /// Result indicating success or failure.
-    fn process_interest(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
-        let content = self.content_store.lock().unwrap().get(&packet.name);
-
-        if let Some(_data) = content {
-            println!("Sending data for interest: {}", packet.name);
-            Ok(())
-        } else {
-            self.pit.lock().unwrap().add_interest(packet.name.clone(), "default_interface");
-            println!("Forwarding interest for: {}", packet.name);
-            Err(format!("Content '{}' not found", packet.name).into())
-        }
-    }
-
-    /// Processes a data packet by storing it in the content store and satisfying any pending interests.
-    /// # Arguments
-    /// * `packet` - The data packet to be processed.
-    /// # Returns
-    /// Result indicating success or failure.
     fn process_data(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
         self.content_store.lock().unwrap().add(packet.name.clone(), packet.content.clone());
-
         if let Some(_interfaces) = self.pit.lock().unwrap().get_incoming_interfaces(&packet.name) {
             println!("Satisfying pending interests for data: {}", packet.name);
         }
         Ok(())
     }
 
-    /// Executes a smart contract by compiling it and running it on the CoopVM.
-    /// # Arguments
-    /// * `contract` - The smart contract code as a string.
-    /// # Returns
-    /// Result indicating success or failure.
+    fn process_interest(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        if self.fib.lock().unwrap().longest_prefix_match(&packet.name).is_some() {
+            println!("Routing interest for: {}", packet.name);
+            Ok(())
+        } else {
+            Err("No route found for interest packet".into())
+        }
+    }
+
+    pub fn main() {
+        let node = IcnNode::new();
+        let interest_packet = Packet {
+            packet_type: PacketType::Interest,
+            name: "test_data".to_string(),
+            content: vec![],
+        };
+        node.process_interest(interest_packet.clone()).unwrap();
+
+        let data_packet = Packet {
+            packet_type: PacketType::Data,
+            name: "test_data".to_string(),
+            content: vec![1, 2, 3],
+        };
+        node.process_data(data_packet).unwrap();
+    }
+
     pub fn execute_smart_contract(&self, contract: String) -> Result<(), Box<dyn Error>> {
         let mut coop_vm = self.coop_vm.lock().unwrap();
         let opcodes = self.compile_contract(&contract)?;
@@ -108,11 +93,6 @@ impl IcnNode {
         Ok(())
     }
 
-    /// Compiles a smart contract from CSCL code to opcodes.
-    /// # Arguments
-    /// * `contract` - The smart contract code as a string.
-    /// # Returns
-    /// A vector of opcodes representing the compiled contract.
     fn compile_contract(&self, contract: &str) -> Result<Vec<Opcode>, Box<dyn Error>> {
         let mut compiler = CSCLCompiler::new(contract);
         compiler.compile()
@@ -134,29 +114,25 @@ mod tests {
     #[test]
     fn test_packet_processing() {
         let node = IcnNode::new();
-
         let interest_packet = Packet {
             packet_type: PacketType::Interest,
             name: "test_data".to_string(),
             content: vec![],
         };
-
-        assert!(node.process_packet(interest_packet.clone()).is_err());
+        assert!(node.process_interest(interest_packet.clone()).is_err());
 
         let data_packet = Packet {
             packet_type: PacketType::Data,
             name: "test_data".to_string(),
             content: vec![1, 2, 3],
         };
-
-        assert!(node.process_packet(data_packet).is_ok());
+        assert!(node.process_data(data_packet).is_ok());
 
         let interest_packet = Packet {
             packet_type: PacketType::Interest,
             name: "test_data".to_string(),
             content: vec![],
         };
-
-        assert!(node.process_packet(interest_packet).is_ok());
+        assert!(node.process_interest(interest_packet).is_ok());
     }
 }
