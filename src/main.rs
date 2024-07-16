@@ -1,15 +1,19 @@
+// File: src/main.rs
+
 use icn_node::{
     IcnNode, CSCLCompiler, Blockchain, Transaction, PoCConsensus, DemocraticSystem,
-    ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, CurrencyType, Node,
+    ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, CurrencyType,
+    Node, ShardingManager
 };
 use icn_node::network::network::NodeType;
 use chrono::Utc;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 fn main() {
     // Initialize the ICN Node with all its components
     let _node = IcnNode::new();
-    
+
     // Initialize the blockchain
     let mut blockchain = Blockchain::new();
 
@@ -21,6 +25,9 @@ fn main() {
 
     // Initialize the network
     let mut network = Network::new();
+
+    // Initialize the sharding manager
+    let sharding_manager = Arc::new(Mutex::new(ShardingManager::new(4, 10))); // 4 shards, 10 nodes per shard
 
     // Add initial members to the consensus mechanism
     consensus.consensus.add_member("Alice".to_string());
@@ -72,18 +79,16 @@ fn main() {
     }
 
     // Example usage of CSCL compiler
-  let cscl_code = r#"
-    x = 100 + 50;
-    y = 200 - 25;
-    z = x * y / 10;
-    emit("Result", z);
-"#;
-
+    let cscl_code = r#"
+        x = 100 + 50;
+        y = 200 - 25;
+        z = x * y / 10;
+        emit("Result", z);
+    "#;
     let mut compiler = CSCLCompiler::new(cscl_code);
     match compiler.compile() {
         Ok(opcodes) => {
             println!("Compiled CSCL code into {} opcodes", opcodes.len());
-
             // Print all compiled opcodes
             for (i, opcode) in opcodes.iter().enumerate() {
                 println!("Opcode {}: {:?}", i, opcode);
@@ -110,6 +115,57 @@ fn main() {
     network.add_node(node1.clone());
     network.add_node(node2.clone());
 
+    // Assign nodes to shards
+    {
+        let mut sharding_manager = sharding_manager.lock().unwrap();
+        if let Err(e) = sharding_manager.assign_node_to_shard(node1.clone(), 0) {
+            println!("Error assigning node to shard: {}", e);
+        }
+        if let Err(e) = sharding_manager.assign_node_to_shard(node2.clone(), 1) {
+            println!("Error assigning node to shard: {}", e);
+        }
+    }
+
+    // Example of cross-shard transaction
+    let cross_shard_tx = Transaction::new(
+        "Alice".to_string(),
+        "Bob".to_string(),
+        50.0,
+        CurrencyType::BasicNeeds,
+        1000,
+    );
+
+    // Initialize balances for Alice and Bob
+    {
+        let mut sharding_manager = sharding_manager.lock().unwrap();
+        sharding_manager.add_address_to_shard("Alice".to_string(), 0);
+        sharding_manager.add_address_to_shard("Bob".to_string(), 1);
+        sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+    }
+
+    {
+        let mut sharding_manager = sharding_manager.lock().unwrap();
+        let from_shard = sharding_manager.get_shard_for_address(&cross_shard_tx.from);
+        let to_shard = sharding_manager.get_shard_for_address(&cross_shard_tx.to);
+
+        if from_shard != to_shard {
+            match sharding_manager.transfer_between_shards(from_shard, to_shard, &cross_shard_tx) {
+                Ok(_) => println!("Cross-shard transaction successful"),
+                Err(e) => println!("Cross-shard transaction failed: {}", e),
+            }
+        }
+    }
+
+    // Print final balances
+    {
+        let sharding_manager = sharding_manager.lock().unwrap();
+        let alice_balance = sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds);
+        let bob_balance = sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds);
+        println!("Final balances:");
+        println!("Alice: {} BasicNeeds", alice_balance);
+        println!("Bob: {} BasicNeeds", bob_balance);
+    }
+
     // Broadcast the latest block
     if let Some(latest_block) = blockchain.get_latest_block() {
         network.broadcast_block(&latest_block);
@@ -134,6 +190,14 @@ fn main() {
     // Print democratic system state
     println!("Democratic system state:");
     println!("Number of active proposals: {}", democratic_system.list_active_proposals().len());
-    
+
+    // Print sharding state
+    {
+        let sharding_manager = sharding_manager.lock().unwrap();
+        println!("Sharding state:");
+        println!("Number of shards: {}", sharding_manager.get_shard_count());
+        println!("Nodes per shard: {}", sharding_manager.get_nodes_per_shard());
+    }
+
     println!("ICN Node simulation completed.");
 }
