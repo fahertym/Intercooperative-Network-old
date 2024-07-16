@@ -1,3 +1,5 @@
+// File: src/lib.rs
+
 use std::sync::{Arc, Mutex};
 use std::error::Error;
 
@@ -10,7 +12,7 @@ pub mod network;
 pub mod node;
 pub mod smart_contract;
 pub mod vm;
-pub mod sharding; // New module
+pub mod sharding;
 
 pub use blockchain::{Block, Transaction, Blockchain};
 pub use consensus::PoCConsensus;
@@ -21,17 +23,17 @@ pub use network::{Node, Network, Packet, PacketType};
 pub use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
 pub use smart_contract::{SmartContract, ExecutionEnvironment};
 pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
-pub use sharding::ShardingManager; // New export
+pub use sharding::ShardingManager;
 
 /// The main struct representing an ICN Node.
-/// It contains the content store, PIT, FIB, blockchain, and CoopVM.
+/// It contains the content store, PIT, FIB, blockchain, CoopVM, and ShardingManager.
 pub struct IcnNode {
     pub content_store: Arc<Mutex<ContentStore>>,
     pub pit: Arc<Mutex<PendingInterestTable>>,
     pub fib: Arc<Mutex<ForwardingInformationBase>>,
     pub blockchain: Arc<Mutex<Blockchain>>,
     pub coop_vm: Arc<Mutex<CoopVM>>,
-    pub sharding_manager: Arc<Mutex<ShardingManager>>, // New field
+    pub sharding_manager: Arc<Mutex<ShardingManager>>,
 }
 
 impl IcnNode {
@@ -117,6 +119,26 @@ impl IcnNode {
         let mut compiler = CSCLCompiler::new(contract);
         compiler.compile()
     }
+
+    /// Processes a cross-shard transaction.
+    /// # Arguments
+    /// * `transaction` - The transaction to be processed.
+    /// # Returns
+    /// Result indicating success or failure.
+    pub fn process_cross_shard_transaction(&self, transaction: &Transaction) -> Result<(), Box<dyn Error>> {
+        let mut sharding_manager = self.sharding_manager.lock().unwrap();
+        let from_shard = sharding_manager.get_shard_for_address(&transaction.from);
+        let to_shard = sharding_manager.get_shard_for_address(&transaction.to);
+
+        if from_shard != to_shard {
+            sharding_manager.transfer_between_shards(from_shard, to_shard, transaction)?;
+            println!("Cross-shard transaction processed successfully");
+        } else {
+            println!("Transaction is within the same shard");
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -158,5 +180,33 @@ mod tests {
         };
 
         assert!(node.process_packet(interest_packet).is_ok());
+    }
+
+    #[test]
+    fn test_cross_shard_transaction() {
+        let node = IcnNode::new();
+
+        // Initialize balances
+        {
+            let mut sharding_manager = node.sharding_manager.lock().unwrap();
+            sharding_manager.add_address_to_shard("Alice".to_string(), 0);
+            sharding_manager.add_address_to_shard("Bob".to_string(), 1);
+            sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+        }
+
+        let transaction = Transaction::new(
+            "Alice".to_string(),
+            "Bob".to_string(),
+            500.0,
+            CurrencyType::BasicNeeds,
+            1000,
+        );
+
+        assert!(node.process_cross_shard_transaction(&transaction).is_ok());
+
+        // Check balances after transaction
+        let sharding_manager = node.sharding_manager.lock().unwrap();
+        assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds), 500.0);
+        assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds), 500.0);
     }
 }

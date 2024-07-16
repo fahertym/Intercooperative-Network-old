@@ -1,3 +1,5 @@
+// File: src/sharding/cross_shard_communication.rs
+
 use crate::blockchain::Transaction;
 use crate::sharding::ShardingManager;
 use std::collections::HashMap;
@@ -74,20 +76,20 @@ impl CrossShardCommunicator {
     pub fn receive_cross_shard_transaction(&mut self, from_shard: u64, transaction: Transaction) -> Result<(), String> {
         let mut sharding_manager = self.sharding_manager.lock().unwrap();
         let to_shard = sharding_manager.get_shard_for_address(&transaction.to);
-    
+
         if to_shard != sharding_manager.get_current_shard_id() {
             return Err("Incorrect destination shard".to_string());
         }
-    
+
         sharding_manager.add_balance(
             &transaction.to,
             transaction.currency_type.clone(),
             transaction.amount
         )?;
-    
+
         println!("Received cross-shard transaction from shard {} to shard {}", from_shard, to_shard);
         println!("Transaction details: {:?}", transaction);
-    
+
         Ok(())
     }
 
@@ -118,7 +120,6 @@ mod tests {
             CurrencyType::BasicNeeds,
             1000,
         );
-
         transaction.sign(&keypair).unwrap();
 
         {
