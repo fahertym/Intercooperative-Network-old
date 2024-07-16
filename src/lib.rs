@@ -1,5 +1,3 @@
-// File: src/lib.rs
-
 use std::sync::{Arc, Mutex};
 use std::error::Error;
 
@@ -13,6 +11,7 @@ pub mod node;
 pub mod smart_contract;
 pub mod vm;
 pub mod sharding;
+pub mod logging;
 
 pub use blockchain::{Block, Transaction, Blockchain};
 pub use consensus::PoCConsensus;
@@ -24,6 +23,8 @@ pub use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
 pub use smart_contract::{SmartContract, ExecutionEnvironment};
 pub use vm::{CoopVM, Opcode, Value, CSCLCompiler};
 pub use sharding::ShardingManager;
+
+pub use crate::logging::logger::{log_info, log_warn, log_error, log_debug, log_trace};
 
 /// The main struct representing an ICN Node.
 /// It contains the content store, PIT, FIB, blockchain, CoopVM, and ShardingManager.
@@ -42,6 +43,8 @@ impl IcnNode {
         let blockchain = Blockchain::new();
         let coop_vm = CoopVM::new(Vec::new()); // Initialize with empty program
         let sharding_manager = ShardingManager::new(4, 10); // Initialize with 4 shards, 10 nodes per shard
+
+        log_info!("ICN Node initialized with default configuration");
 
         IcnNode {
             content_store: Arc::new(Mutex::new(ContentStore::new())),
@@ -74,11 +77,11 @@ impl IcnNode {
         let content = self.content_store.lock().unwrap().get(&packet.name);
 
         if let Some(_data) = content {
-            println!("Sending data for interest: {}", packet.name);
+            log_info!("Sending data for interest: {}", packet.name);
             Ok(())
         } else {
             self.pit.lock().unwrap().add_interest(packet.name.clone(), "default_interface");
-            println!("Forwarding interest for: {}", packet.name);
+            log_info!("Forwarding interest for: {}", packet.name);
             Err(format!("Content '{}' not found", packet.name).into())
         }
     }
@@ -92,7 +95,7 @@ impl IcnNode {
         self.content_store.lock().unwrap().add(packet.name.clone(), packet.content.clone());
 
         if let Some(_interfaces) = self.pit.lock().unwrap().get_incoming_interfaces(&packet.name) {
-            println!("Satisfying pending interests for data: {}", packet.name);
+            log_info!("Satisfying pending interests for data: {}", packet.name);
         }
         Ok(())
     }
@@ -107,6 +110,7 @@ impl IcnNode {
         let opcodes = self.compile_contract(&contract)?;
         coop_vm.load_program(opcodes);
         coop_vm.run()?;
+        log_info!("Smart contract executed successfully");
         Ok(())
     }
 
@@ -132,9 +136,9 @@ impl IcnNode {
 
         if from_shard != to_shard {
             sharding_manager.transfer_between_shards(from_shard, to_shard, transaction)?;
-            println!("Cross-shard transaction processed successfully");
+            log_info!("Cross-shard transaction processed successfully");
         } else {
-            println!("Transaction is within the same shard");
+            log_info!("Transaction is within the same shard");
         }
 
         Ok(())
@@ -151,6 +155,7 @@ mod tests {
         assert!(node.content_store.lock().unwrap().is_empty());
         assert!(node.pit.lock().unwrap().is_empty());
         assert!(node.fib.lock().unwrap().is_empty());
+        log_info!("ICN Node creation test passed");
     }
 
     #[test]
@@ -180,6 +185,7 @@ mod tests {
         };
 
         assert!(node.process_packet(interest_packet).is_ok());
+        log_info!("Packet processing test passed");
     }
 
     #[test]
@@ -208,5 +214,6 @@ mod tests {
         let sharding_manager = node.sharding_manager.lock().unwrap();
         assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds), 500.0);
         assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds), 500.0);
+        log_info!("Cross-shard transaction test passed");
     }
 }
