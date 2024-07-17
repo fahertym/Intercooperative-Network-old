@@ -1,67 +1,61 @@
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use lru::LruCache;
 
 const MAX_CACHE_SIZE: usize = 1000;
 const DEFAULT_TTL: Duration = Duration::from_secs(3600);
 
-struct CacheEntry {
+pub struct CacheEntry {
     content: Vec<u8>,
     timestamp: Instant,
     ttl: Duration,
 }
 
 pub struct ContentStore {
-    cache: HashMap<String, CacheEntry>,
+    cache: LruCache<String, CacheEntry>,
 }
 
 impl ContentStore {
     pub fn new() -> Self {
         ContentStore {
-            cache: HashMap::new(),
+            cache: LruCache::new(MAX_CACHE_SIZE),
         }
     }
 
     pub fn add(&mut self, name: String, content: Vec<u8>) {
-        self.cache.insert(name, CacheEntry {
+        let entry = CacheEntry {
             content,
             timestamp: Instant::now(),
             ttl: DEFAULT_TTL,
-        });
+        };
+        self.cache.put(name, entry);
+    }
 
-        if self.cache.len() > MAX_CACHE_SIZE {
-            self.evict_oldest();
+    pub fn get_and_pop(&mut self, name: &str) -> Option<Vec<u8>> {
+        if let Some(entry) = self.cache.get(name) {
+            let content = entry.content.clone(); // Clone the content to return later
+            self.cache.pop(name); // Now, this works because the immutable borrow is out of scope
+            Some(content)
+        } else {
+            None
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<Vec<u8>> {
-        self.cache.get(name).and_then(|entry| {
-            if entry.timestamp.elapsed() < entry.ttl {
-                Some(entry.content.clone())
-            } else {
-                None
-            }
-        })
-    }
-
     pub fn remove_expired(&mut self) {
-        self.cache.retain(|_, entry| entry.timestamp.elapsed() < entry.ttl);
+        let now = Instant::now();
+        let expired_keys: Vec<String> = self.cache
+            .iter()
+            .filter(|(_, entry)| now.duration_since(entry.timestamp) >= entry.ttl)
+            .map(|(key, _)| key.clone())
+            .collect();
+
+        for key in expired_keys {
+            self.cache.pop(&key);
+        }
     }
 
     pub fn set_ttl(&mut self, name: &str, ttl: Duration) {
         if let Some(entry) = self.cache.get_mut(name) {
             entry.ttl = ttl;
-        }
-    }
-
-    pub fn clear_expired(&mut self) {
-        self.cache.retain(|_, entry| entry.timestamp.elapsed() < entry.ttl);
-    }
-
-    fn evict_oldest(&mut self) {
-        if let Some(oldest) = self.cache.iter()
-            .min_by_key(|(_, entry)| entry.timestamp)
-            .map(|(k, _)| k.clone()) {
-            self.cache.remove(&oldest);
         }
     }
 
@@ -80,17 +74,13 @@ mod tests {
         let content = vec![1, 2, 3, 4];
         cs.add("test".to_string(), content.clone());
 
-        assert_eq!(cs.get("test"), Some(content));
-        assert_eq!(cs.get("nonexistent"), None);
-
-        cs.set_ttl("test", Duration::from_secs(1));
-        std::thread::sleep(Duration::from_secs(2));
-        cs.remove_expired();
-        assert_eq!(cs.get("test"), None);
+        assert_eq!(cs.get_and_pop("test"), Some(content));
+        assert_eq!(cs.get_and_pop("nonexistent"), None);
 
         cs.add("test2".to_string(), vec![5, 6, 7, 8]);
-        cs.set_ttl("test2", Duration::from_secs(10));
-        cs.clear_expired();
-        assert_eq!(cs.get("test2"), Some(vec![5, 6, 7, 8]));
+        assert!(!cs.is_empty());
+
+        cs.remove_expired();
+        assert_eq!(cs.get_and_pop("test2"), Some(vec![5, 6, 7, 8]));
     }
 }

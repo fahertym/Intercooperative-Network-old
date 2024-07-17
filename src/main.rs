@@ -61,7 +61,7 @@ impl IcnNode {
     }
 
     fn process_interest(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
-        let content = self.content_store.write().unwrap().get(&packet.name);
+        let content = self.content_store.write().unwrap().get_and_pop(&packet.name);
 
         if let Some(_data) = content {
             info!("Sending data for interest: {}", packet.name);
