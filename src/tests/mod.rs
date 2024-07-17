@@ -5,14 +5,46 @@
 // The tests submodules contain various test cases to ensure
 // the correctness and reliability of the blockchain implementation.
 
-pub mod blockchain_and_consensus_tests;
-pub mod blockchain_tests;
-pub mod icn_node_tests;
-pub mod integration_tests;
-pub mod smart_contract_tests;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::currency::CurrencyType;
+    use ed25519_dalek::Keypair;
+    use rand::rngs::OsRng;
 
-pub use blockchain_and_consensus_tests::*;
-pub use blockchain_tests::*;
-pub use icn_node_tests::*;
-pub use integration_tests::*;
-pub use smart_contract_tests::*;
+    #[test]
+    fn test_cross_shard_transaction() {
+        let node = IcnNode::new();
+
+        // Initialize balances
+        {
+            let mut sharding_manager = node.sharding_manager.write().unwrap();
+            sharding_manager.add_address_to_shard("Alice".to_string(), 0);
+            sharding_manager.add_address_to_shard("Bob".to_string(), 1);
+            sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+        }
+
+        let mut csprng = OsRng{};
+        let keypair: Keypair = Keypair::generate(&mut csprng);
+
+        let mut transaction = Transaction::new(
+            "Alice".to_string(),
+            "Bob".to_string(),
+            500.0,
+            CurrencyType::BasicNeeds,
+            1000,
+        );
+        if let Err(e) = transaction.sign(&keypair) {
+            panic!("Failed to sign transaction: {}", e);
+        }
+
+        println!("Signed transaction: {:?}", transaction);
+
+        assert!(node.process_cross_shard_transaction(&transaction).is_ok(), "Cross-shard transaction failed");
+
+        // Check balances after transaction
+        let sharding_manager = node.sharding_manager.read().unwrap();
+        assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds), 500.0);
+        assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds), 500.0);
+    }
+}

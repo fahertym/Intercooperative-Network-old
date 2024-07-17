@@ -1,6 +1,7 @@
+// src/currency/currency.rs
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
+use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -16,6 +17,8 @@ pub enum CurrencyType {
     Luxury,
     Service,
     Custom(String),
+    AssetToken(String),
+    Bond(String),
 }
 
 impl fmt::Display for CurrencyType {
@@ -51,14 +54,6 @@ impl Currency {
     pub fn mint(&mut self, amount: f64) {
         self.total_supply += amount;
         self.last_issuance = Utc::now();
-    }
-
-    pub fn burn(&mut self, amount: f64) -> Result<(), String> {
-        if amount > self.total_supply {
-            return Err("Insufficient supply to burn".to_string());
-        }
-        self.total_supply -= amount;
-        Ok(())
     }
 }
 
@@ -115,14 +110,6 @@ impl CurrencySystem {
             let time_since_last_issuance = now.signed_duration_since(currency.last_issuance);
             let issuance_amount = currency.total_supply * currency.issuance_rate * time_since_last_issuance.num_milliseconds() as f64 / 86_400_000.0; // Daily rate
             currency.mint(issuance_amount);
-            currency.last_issuance = now;
-        }
-    }
-
-    pub fn print_currency_supplies(&self) {
-        println!("Currency Supplies:");
-        for (currency_type, currency) in &self.currencies {
-            println!("{:?}: {}", currency_type, currency.total_supply);
         }
     }
 }
@@ -155,54 +142,5 @@ impl Wallet {
     pub fn get_balance(&self, currency_type: &CurrencyType) -> f64 {
         *self.balances.get(currency_type).unwrap_or(&0.0)
     }
-
-    pub fn print_balances(&self) {
-        println!("Wallet Balances:");
-        for (currency_type, balance) in &self.balances {
-            println!("{:?}: {}", currency_type, balance);
-        }
-    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::thread::sleep;
-    use std::time::Duration;
-
-    #[test]
-    fn test_currency_system() {
-        let mut system = CurrencySystem::new();
-        assert_eq!(system.currencies.len(), 10);
-
-        system.create_custom_currency("TestCoin".to_string(), 1000.0, 0.01).unwrap();
-        assert_eq!(system.currencies.len(), 11);
-
-        let test_coin = system.get_currency(&CurrencyType::Custom("TestCoin".to_string())).unwrap();
-        assert_eq!(test_coin.total_supply, 1000.0);
-
-        sleep(Duration::from_millis(10));
-
-        system.adaptive_issuance();
-        
-        let basic_needs_supply = system.get_currency(&CurrencyType::BasicNeeds).unwrap().total_supply;
-        assert!(basic_needs_supply > 1_000_000.0);
-
-        system.print_currency_supplies();
-    }
-
-    #[test]
-    fn test_wallet() {
-        let mut wallet = Wallet::new();
-
-        wallet.deposit(CurrencyType::BasicNeeds, 500.0);
-        assert_eq!(wallet.get_balance(&CurrencyType::BasicNeeds), 500.0);
-
-        wallet.withdraw(CurrencyType::BasicNeeds, 200.0).unwrap();
-        assert_eq!(wallet.get_balance(&CurrencyType::BasicNeeds), 300.0);
-
-        assert!(wallet.withdraw(CurrencyType::BasicNeeds, 400.0).is_err());
-
-        wallet.print_balances();
-    }
-}

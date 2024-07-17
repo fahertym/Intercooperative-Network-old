@@ -33,17 +33,18 @@ impl ContentStore {
         }
     }
 
-    pub fn get(&mut self, name: &str) -> Option<Vec<u8>> {
-        if let Some(entry) = self.cache.get(name) {
+    pub fn get(&self, name: &str) -> Option<Vec<u8>> {
+        self.cache.get(name).and_then(|entry| {
             if entry.timestamp.elapsed() < entry.ttl {
                 Some(entry.content.clone())
             } else {
-                self.cache.remove(name);
                 None
             }
-        } else {
-            None
-        }
+        })
+    }
+
+    pub fn remove_expired(&mut self) {
+        self.cache.retain(|_, entry| entry.timestamp.elapsed() < entry.ttl);
     }
 
     pub fn set_ttl(&mut self, name: &str, ttl: Duration) {
@@ -84,6 +85,7 @@ mod tests {
 
         cs.set_ttl("test", Duration::from_secs(1));
         std::thread::sleep(Duration::from_secs(2));
+        cs.remove_expired();
         assert_eq!(cs.get("test"), None);
 
         cs.add("test2".to_string(), vec![5, 6, 7, 8]);

@@ -1,11 +1,7 @@
-extern crate lazy_static;
+//use log::*;
 
-use lazy_static::lazy_static;
-use std::sync::Mutex;
-use log::{info, warn, error, debug, trace};
-
-lazy_static! {
-    static ref LOGGER: Mutex<()> = Mutex::new(());
+lazy_static::lazy_static! {
+    pub static ref LOGGER: std::sync::Mutex<()> = std::sync::Mutex::new(());
 }
 
 #[macro_export]

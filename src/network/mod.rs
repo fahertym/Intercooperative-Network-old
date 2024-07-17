@@ -1,7 +1,7 @@
-// src/network/mod.rs
-
+pub mod node;
 pub mod network;
 pub mod packet;
 
-pub use network::{Node, Network};
-pub use packet::{Packet, PacketType};
+pub use self::node::Node;
+pub use self::network::Network;
+pub use self::packet::{Packet, PacketType};

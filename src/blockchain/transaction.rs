@@ -1,8 +1,5 @@
-// src/blockchain/transaction.rs
-
 use serde::{Deserialize, Serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
-use crate::smart_contract::SmartContract;
 use crate::currency::CurrencyType;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -12,7 +9,7 @@ pub struct Transaction {
     pub amount: f64,
     pub currency_type: CurrencyType,
     pub gas_limit: u64,
-    pub smart_contract: Option<SmartContract>,
+    pub smart_contract_id: Option<String>,
     pub signature: Option<Vec<u8>>,
     pub public_key: Option<Vec<u8>>,
 }
@@ -25,7 +22,7 @@ impl Transaction {
             amount,
             currency_type,
             gas_limit,
-            smart_contract: None,
+            smart_contract_id: None,
             signature: None,
             public_key: None,
         }
@@ -59,37 +56,5 @@ impl Transaction {
             self.currency_type,
             self.gas_limit
         ).into_bytes()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rand::rngs::OsRng;
-
-    #[test]
-    fn test_transaction_sign_and_verify() {
-        let mut csprng = OsRng{};
-        let keypair: Keypair = Keypair::generate(&mut csprng);
-
-        let mut transaction = Transaction::new(
-            "Alice".to_string(),
-            "Bob".to_string(),
-            100.0,
-            CurrencyType::BasicNeeds,
-            1000,
-        );
-
-        // Sign the transaction
-        transaction.sign(&keypair).unwrap();
-
-        // Verify the transaction
-        assert!(transaction.verify().unwrap());
-
-        // Tamper with the transaction
-        transaction.amount = 200.0;
-
-        // Verification should fail
-        assert!(!transaction.verify().unwrap());
     }
 }

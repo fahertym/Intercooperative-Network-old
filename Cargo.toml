@@ -19,6 +19,7 @@ env_logger = "0.10"
 uuid = { version = "0.8", features = ["v4"] }
 once_cell = "1.10.0"
 lazy_static = "1.4"
+erased-serde = "0.3"
 
 [dev-dependencies]
 tokio-test = "0.4.4"

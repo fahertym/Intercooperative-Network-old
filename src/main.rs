@@ -1,203 +1,312 @@
-// File: src/main.rs
-
-use icn_node::{
-    IcnNode, CSCLCompiler, Blockchain, Transaction, PoCConsensus, DemocraticSystem,
-    ProposalCategory, ProposalType, DecentralizedIdentity, Network, CoopVM, CurrencyType,
-    Node, ShardingManager
-};
-use icn_node::network::network::NodeType;
+use log::{debug, info, warn};
 use chrono::Utc;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::error::Error;
+use std::sync::{Arc, RwLock};
 
-fn main() {
-    // Initialize the ICN Node with all its components
-    let _node = IcnNode::new();
+mod blockchain;
+mod consensus;
+mod currency;
+mod governance;
+mod identity;
+mod network;
+mod node;
+mod smart_contract;
+mod vm;
+mod sharding;
+mod logging;
 
-    // Initialize the blockchain
-    let mut blockchain = Blockchain::new();
+use blockchain::{Transaction as BlockchainTransaction, Blockchain};
+use consensus::PoCConsensus;
+use currency::CurrencyType;
+use governance::DemocraticSystem;
+use identity::DecentralizedIdentity;
+use network::{Network, Packet, PacketType};
+use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
+use vm::{CoopVM, Opcode, CSCLCompiler};
+use sharding::ShardingManager;
 
-    // Set up the Proof of Contribution consensus mechanism
+pub struct IcnNode {
+    content_store: Arc<RwLock<ContentStore>>,
+    pit: Arc<RwLock<PendingInterestTable>>,
+    fib: Arc<RwLock<ForwardingInformationBase>>,
+    blockchain: Arc<RwLock<Blockchain>>,
+    coop_vm: Arc<RwLock<CoopVM>>,
+    sharding_manager: Arc<RwLock<ShardingManager>>,
+}
+
+impl IcnNode {
+    pub fn new() -> Self {
+        let blockchain = Arc::new(RwLock::new(Blockchain::new()));
+        let coop_vm = Arc::new(RwLock::new(CoopVM::new(Vec::new())));
+        let sharding_manager = Arc::new(RwLock::new(ShardingManager::new(4, 10)));
+
+        info!("ICN Node initialized with default configuration");
+
+        IcnNode {
+            content_store: Arc::new(RwLock::new(ContentStore::new())),
+            pit: Arc::new(RwLock::new(PendingInterestTable::new())),
+            fib: Arc::new(RwLock::new(ForwardingInformationBase::new())),
+            blockchain,
+            coop_vm,
+            sharding_manager,
+        }
+    }
+
+    pub fn process_packet(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        match packet.packet_type {
+            PacketType::Interest => self.process_interest(packet),
+            PacketType::Data => self.process_data(packet),
+        }
+    }
+
+    fn process_interest(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        let content = self.content_store.write().unwrap().get(&packet.name);
+
+        if let Some(_data) = content {
+            info!("Sending data for interest: {}", packet.name);
+            Ok(())
+        } else {
+            self.pit.write().unwrap().add_interest(packet.name.clone(), "default_interface");
+            info!("Forwarding interest for: {}", packet.name);
+            Err(format!("Content '{}' not found", packet.name).into())
+        }
+    }
+
+    fn process_data(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
+        self.content_store.write().unwrap().add(packet.name.clone(), packet.content.clone());
+
+        if let Some(_interfaces) = self.pit.read().unwrap().get_incoming_interfaces(&packet.name) {
+            info!("Satisfying pending interests for data: {}", packet.name);
+        }
+        Ok(())
+    }
+
+    pub fn process_cross_shard_transaction(&self, transaction: &BlockchainTransaction) -> Result<(), Box<dyn Error>> {
+        let mut sharding_manager = self.sharding_manager.write().unwrap();
+        let from_shard = sharding_manager.get_shard_for_address(&transaction.from);
+        let to_shard = sharding_manager.get_shard_for_address(&transaction.to);
+    
+        let sharding_transaction = BlockchainTransaction {
+            from: transaction.from.clone(),
+            to: transaction.to.clone(),
+            amount: transaction.amount,
+            currency_type: transaction.currency_type.clone(),
+            gas_limit: transaction.gas_limit,
+            smart_contract_id: transaction.smart_contract_id.clone(),
+            signature: transaction.signature.clone(),
+            public_key: transaction.public_key.clone(),
+        };
+    
+        if from_shard != to_shard {
+            sharding_manager.transfer_between_shards(from_shard, to_shard, &sharding_transaction)?;
+            info!("Cross-shard transaction processed successfully");
+        } else {
+            info!("Transaction is within the same shard");
+        }
+    
+        Ok(())
+    }
+
+    pub fn execute_smart_contract(&self, contract: String) -> Result<(), Box<dyn Error>> {
+        let mut coop_vm = self.coop_vm.write().unwrap();
+        let opcodes = self.compile_contract(&contract)?;
+        coop_vm.load_program(opcodes);
+        coop_vm.run()?;
+        info!("Smart contract executed successfully");
+        Ok(())
+    }
+
+    fn compile_contract(&self, contract: &str) -> Result<Vec<Opcode>, Box<dyn Error>> {
+        let mut compiler = CSCLCompiler::new(contract);
+        compiler.compile()
+    }
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
+    info!("Starting ICN Node");
+
+    let node = IcnNode::new();
+    let mut network = Network::new();
     let mut consensus = PoCConsensus::new(0.5, 0.66);
-
-    // Set up the democratic system for governance
     let mut democratic_system = DemocraticSystem::new();
 
-    // Initialize the network
-    let mut network = Network::new();
+    setup_network_and_consensus(&mut network, &mut consensus)?;
+    process_initial_transactions(&node)?;
+    create_and_vote_on_proposal(&mut democratic_system)?;
+    compile_and_run_cscl(&node)?;
+    print_final_state(&node, &consensus, &democratic_system);
 
-    // Initialize the sharding manager
-    let sharding_manager = Arc::new(Mutex::new(ShardingManager::new(4, 10))); // 4 shards, 10 nodes per shard
+    info!("ICN Node simulation completed.");
+    Ok(())
+}
 
-    // Add initial members to the consensus mechanism
-    consensus.consensus.add_member("Alice".to_string());
-    consensus.consensus.add_member("Bob".to_string());
-    consensus.consensus.add_member("Charlie".to_string());
+fn setup_network_and_consensus(network: &mut Network, consensus: &mut PoCConsensus) -> Result<(), Box<dyn Error>> {
+    let _node1 = network::node::Node::new("Node1", network::node::NodeType::PersonalDevice, "127.0.0.1:8000");
+    let _node2 = network::node::Node::new("Node2", network::node::NodeType::PersonalDevice, "127.0.0.1:8001");
+    network.add_node(network::network::Node { id: "Node1".to_string(), node_type: network::node::NodeType::PersonalDevice, address: "127.0.0.1:8000".to_string() });
+    network.add_node(network::network::Node { id: "Node2".to_string(), node_type: network::node::NodeType::PersonalDevice, address: "127.0.0.1:8001".to_string() });
 
-    // Create decentralized identities for participants
+    consensus.add_member("Alice".to_string(), false);
+    consensus.add_member("Bob".to_string(), false);
+    consensus.add_member("Charlie".to_string(), false);
+    consensus.add_member("CorpX".to_string(), true);
+
+    Ok(())
+}
+
+fn process_initial_transactions(node: &IcnNode) -> Result<(), Box<dyn Error>> {
     let (alice_did, _) = DecentralizedIdentity::new(HashMap::new());
     let (bob_did, _) = DecentralizedIdentity::new(HashMap::new());
 
-    // Add initial transactions to the blockchain
-    let tx1 = Transaction::new(
+    let tx = BlockchainTransaction::new(
         alice_did.id.clone(),
         bob_did.id.clone(),
         100.0,
         CurrencyType::BasicNeeds,
-        1000,
+        1000
     );
-    blockchain.add_transaction(tx1);
 
-    // Create a block containing the initial transactions
-    if let Err(e) = blockchain.create_block("Alice".to_string()) {
-        println!("Error creating block: {}", e);
+    node.blockchain.write().unwrap().add_transaction(tx);
+    node.blockchain.write().unwrap().create_block("Alice".to_string())?;
+
+    if let Some(_latest_block) = node.blockchain.read().unwrap().get_latest_block() {
+        // Assuming Network has a broadcast_block method
+        // network.broadcast_block(&latest_block);
+    } else {
+        warn!("No blocks in the blockchain to broadcast");
     }
 
-    // Create a proposal for the democratic system
+    Ok(())
+}
+
+fn create_and_vote_on_proposal(democratic_system: &mut DemocraticSystem) -> Result<(), Box<dyn Error>> {
     let proposal_id = democratic_system.create_proposal(
         "Community Garden".to_string(),
         "Create a community garden in the local park".to_string(),
         "Alice".to_string(),
-        chrono::Duration::weeks(1), // 1 week voting period
-        ProposalType::Constitutional,
-        ProposalCategory::Economic,
-        0.51, // 51% quorum
-        Some(Utc::now() + chrono::Duration::days(30)), // Execute in 30 days if passed
+        chrono::Duration::weeks(1),
+        governance::ProposalType::Constitutional,
+        governance::ProposalCategory::Economic,
+        0.51,
+        Some(Utc::now() + chrono::Duration::days(30)),
     );
 
-    // Participants vote on the proposal
-    if let Err(e) = democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0) {
-        println!("Error voting on proposal: {}", e);
-    }
-    if let Err(e) = democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0) {
-        println!("Error voting on proposal: {}", e);
-    }
+    democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0)?;
+    democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0)?;
+    democratic_system.tally_votes(&proposal_id)?;
 
-    // Tally votes for the proposal
-    if let Err(e) = democratic_system.tally_votes(&proposal_id) {
-        println!("Error tallying votes: {}", e);
-    }
+    Ok(())
+}
 
-    // Example usage of CSCL compiler
+fn compile_and_run_cscl(_node: &IcnNode) -> Result<(), Box<dyn Error>> {
     let cscl_code = r#"
-        x = 100 + 50;
-        y = 200 - 25;
-        z = x * y / 10;
-        emit("Result", z);
+    x = 100 + 50;
+    y = 200 - 25;
+    z = x * y / 10;
+    emit("Result", z);
     "#;
+
     let mut compiler = CSCLCompiler::new(cscl_code);
-    match compiler.compile() {
-        Ok(opcodes) => {
-            println!("Compiled CSCL code into {} opcodes", opcodes.len());
-            // Print all compiled opcodes
-            for (i, opcode) in opcodes.iter().enumerate() {
-                println!("Opcode {}: {:?}", i, opcode);
-            }
+    let opcodes = compiler.compile()?;
 
-            // Create a CoopVM instance and execute the compiled code
-            let mut coop_vm = CoopVM::new(opcodes);
-            match coop_vm.run() {
-                Ok(_) => println!("CoopVM execution completed successfully"),
-                Err(e) => println!("CoopVM execution failed: {}", e),
-            }
-
-            // Print the final state of the CoopVM
-            println!("CoopVM final state:");
-            println!("Stack: {:?}", coop_vm.get_stack());
-            println!("Memory: {:?}", coop_vm.get_memory());
-        },
-        Err(e) => println!("Compilation failed: {}", e),
+    info!("Compiled CSCL code into {} opcodes", opcodes.len());
+    for (i, opcode) in opcodes.iter().enumerate() {
+        debug!("Opcode {}: {:?}", i, opcode);
     }
 
-    // Simulate some network activity
-    let node1 = Node::new("Node1", NodeType::PersonalDevice, "127.0.0.1:8000");
-    let node2 = Node::new("Node2", NodeType::PersonalDevice, "127.0.0.1:8001");
-    network.add_node(node1.clone());
-    network.add_node(node2.clone());
+    let mut coop_vm = CoopVM::new(opcodes);
+    coop_vm.run()?;
 
-    // Assign nodes to shards
-    {
-        let mut sharding_manager = sharding_manager.lock().unwrap();
-        if let Err(e) = sharding_manager.assign_node_to_shard(node1.clone(), 0) {
-            println!("Error assigning node to shard: {}", e);
-        }
-        if let Err(e) = sharding_manager.assign_node_to_shard(node2.clone(), 1) {
-            println!("Error assigning node to shard: {}", e);
-        }
-    }
+    debug!("CoopVM final state:");
+    debug!("Stack: {:?}", coop_vm.get_stack());
+    debug!("Memory: {:?}", coop_vm.get_memory());
 
-    // Example of cross-shard transaction
-    let cross_shard_tx = Transaction::new(
-        "Alice".to_string(),
-        "Bob".to_string(),
-        50.0,
-        CurrencyType::BasicNeeds,
-        1000,
-    );
+    Ok(())
+}
 
-    // Initialize balances for Alice and Bob
-    {
-        let mut sharding_manager = sharding_manager.lock().unwrap();
-        sharding_manager.add_address_to_shard("Alice".to_string(), 0);
-        sharding_manager.add_address_to_shard("Bob".to_string(), 1);
-        sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
-    }
-
-    {
-        let mut sharding_manager = sharding_manager.lock().unwrap();
-        let from_shard = sharding_manager.get_shard_for_address(&cross_shard_tx.from);
-        let to_shard = sharding_manager.get_shard_for_address(&cross_shard_tx.to);
-
-        if from_shard != to_shard {
-            match sharding_manager.transfer_between_shards(from_shard, to_shard, &cross_shard_tx) {
-                Ok(_) => println!("Cross-shard transaction successful"),
-                Err(e) => println!("Cross-shard transaction failed: {}", e),
-            }
-        }
-    }
-
-    // Print final balances
-    {
-        let sharding_manager = sharding_manager.lock().unwrap();
-        let alice_balance = sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds);
-        let bob_balance = sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds);
-        println!("Final balances:");
-        println!("Alice: {} BasicNeeds", alice_balance);
-        println!("Bob: {} BasicNeeds", bob_balance);
-    }
-
-    // Broadcast the latest block
-    if let Some(latest_block) = blockchain.get_latest_block() {
-        network.broadcast_block(&latest_block);
+fn print_final_state(node: &IcnNode, consensus: &PoCConsensus, democratic_system: &DemocraticSystem) {
+    info!("Blockchain state:");
+    info!("Number of blocks: {}", node.blockchain.read().unwrap().chain.len());
+    if let Some(latest_block) = node.blockchain.read().unwrap().get_latest_block() {
+        info!("Latest block hash: {}", latest_block.hash);
     } else {
-        println!("No blocks in the blockchain to broadcast");
+        warn!("No blocks in the blockchain");
     }
 
-    // Print final blockchain state
-    println!("Blockchain state:");
-    println!("Number of blocks: {}", blockchain.chain.len());
-    if let Some(latest_block) = blockchain.get_latest_block() {
-        println!("Latest block hash: {}", latest_block.hash);
-    } else {
-        println!("No blocks in the blockchain");
+    info!("Consensus state:");
+    info!("Number of members: {}", consensus.members.len());
+    info!("Current vote threshold: {}", consensus.threshold);
+
+    info!("Democratic system state:");
+    info!("Number of active proposals: {}", democratic_system.list_active_proposals().len());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_icn_node_creation() {
+        let node = IcnNode::new();
+        assert!(node.content_store.read().unwrap().is_empty());
+        assert!(node.pit.read().unwrap().is_empty());
+        assert!(node.fib.read().unwrap().is_empty());
+        info!("ICN Node creation test passed");
     }
 
-    // Print consensus state
-    println!("Consensus state:");
-    println!("Number of members: {}", consensus.consensus.members.len());
-    println!("Current vote threshold: {}", consensus.vote_threshold);
+    #[test]
+    fn test_packet_processing() {
+        let node = IcnNode::new();
+        let interest_packet = Packet {
+            packet_type: PacketType::Interest,
+            name: "test_data".to_string(),
+            content: vec![],
+        };
 
-    // Print democratic system state
-    println!("Democratic system state:");
-    println!("Number of active proposals: {}", democratic_system.list_active_proposals().len());
+        assert!(node.process_packet(interest_packet.clone()).is_err());
 
-    // Print sharding state
-    {
-        let sharding_manager = sharding_manager.lock().unwrap();
-        println!("Sharding state:");
-        println!("Number of shards: {}", sharding_manager.get_shard_count());
-        println!("Nodes per shard: {}", sharding_manager.get_nodes_per_shard());
+        let data_packet = Packet {
+            packet_type: PacketType::Data,
+            name: "test_data".to_string(),
+            content: vec![1, 2, 3, 4],
+        };
+
+        assert!(node.process_packet(data_packet).is_ok());
+
+        let interest_packet = Packet {
+            packet_type: PacketType::Interest,
+            name: "test_data".to_string(),
+            content: vec![],
+        };
+
+        assert!(node.process_packet(interest_packet).is_ok());
+        info!("Packet processing test passed");
     }
 
-    println!("ICN Node simulation completed.");
+    #[test]
+    fn test_cross_shard_transaction() {
+        let node = IcnNode::new();
+
+        // Initialize balances
+        node.sharding_manager.write().unwrap().add_address_to_shard("Alice".to_string(), 0);
+        node.sharding_manager.write().unwrap().add_address_to_shard("Bob".to_string(), 1);
+        node.sharding_manager.write().unwrap().initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+
+        let transaction = BlockchainTransaction::new(
+            "Alice".to_string(),
+            "Bob".to_string(),
+            500.0,
+            CurrencyType::BasicNeeds,
+            1000
+        );
+
+        assert!(node.process_cross_shard_transaction(&transaction).is_ok());
+
+        // Check balances after transaction
+        assert_eq!(node.sharding_manager.read().unwrap().get_balance("Alice".to_string(), CurrencyType::BasicNeeds), 500.0);
+        assert_eq!(node.sharding_manager.read().unwrap().get_balance("Bob".to_string(), CurrencyType::BasicNeeds), 500.0);
+        info!("Cross-shard transaction test passed");
+    }
 }
