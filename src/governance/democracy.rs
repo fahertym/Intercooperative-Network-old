@@ -1,3 +1,5 @@
+// src/governance/democracy.rs
+
 use std::collections::HashMap;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};

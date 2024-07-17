@@ -163,9 +163,10 @@ fn print_final_state(node: &IcnNode, consensus: &PoCConsensus, democratic_system
 #[cfg(test)]
 mod tests {
     use super::*;
-    use icn_node::network::{Packet, PacketType};
+    use crate::currency::CurrencyType;
     use ed25519_dalek::Keypair;
     use rand::rngs::OsRng;
+
 
     #[test]
     fn test_icn_node_creation() {
@@ -247,13 +248,29 @@ mod tests {
     fn test_democratic_system() {
         let mut democratic_system = DemocraticSystem::new();
         
-        let result = create_and_vote_on_proposal(&mut democratic_system);
-        assert!(result.is_ok());
+        let proposal_id = democratic_system.create_proposal(
+            "Community Garden".to_string(),
+            "Create a community garden in the local park".to_string(),
+            "Alice".to_string(),
+            chrono::Duration::seconds(5), // Shorter duration for testing
+            ProposalType::Constitutional,
+            ProposalCategory::Economic,
+            0.51,
+            Some(Utc::now() + chrono::Duration::days(30)),
+        ).expect("Failed to create proposal");
 
-        let proposals = democratic_system.list_active_proposals();
-        assert_eq!(proposals.len(), 1);
+        democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0).expect("Failed to vote");
+        democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0).expect("Failed to vote");
+        democratic_system.vote("David".to_string(), proposal_id.clone(), true, 1.0).expect("Failed to vote");
 
-        info!("Democratic system test passed");
+        // Wait for the voting period to end
+        std::thread::sleep(std::time::Duration::from_secs(6));
+
+        democratic_system.tally_votes(&proposal_id).expect("Failed to tally votes");
+
+        let proposal = democratic_system.get_proposal(&proposal_id)
+            .expect("Proposal not found after voting");
+        assert_eq!(proposal.status, ProposalStatus::Passed);
     }
 
     #[test]
