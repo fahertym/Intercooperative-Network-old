@@ -1,7 +1,10 @@
+// src/blockchain/mod.rs
+
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use crate::currency::CurrencyType;
 use crate::consensus::PoCConsensus;
+use crate::error::{Error, Result};
 
 pub mod block;
 pub mod transaction;
@@ -34,14 +37,14 @@ impl Blockchain {
         blockchain
     }
 
-    pub fn add_transaction(&mut self, transaction: Transaction) -> Result<(), String> {
+    pub fn add_transaction(&mut self, transaction: Transaction) -> Result<()> {
         // Add validation logic here if needed
         self.pending_transactions.push(transaction);
         Ok(())
     }
 
-    pub fn create_block(&mut self, _author: String) -> Result<(), String> {
-        let previous_block = self.chain.last().ok_or("No previous block found")?;
+    pub fn create_block(&mut self, author: String) -> Result<()> {
+        let previous_block = self.chain.last().ok_or(Error::BlockchainError("No previous block found".to_string()))?;
         let new_block = Block::new(
             self.chain.len() as u64,
             self.pending_transactions.clone(),
@@ -72,20 +75,20 @@ impl Blockchain {
         balance
     }
 
-    pub fn validate_chain(&self) -> bool {
+    pub fn validate_chain(&self) -> Result<()> {
         for i in 1..self.chain.len() {
             let previous_block = &self.chain[i - 1];
             let current_block = &self.chain[i];
 
             if current_block.previous_hash != previous_block.hash {
-                return false;
+                return Err(Error::BlockchainError("Invalid previous hash".to_string()));
             }
 
             if current_block.hash != current_block.calculate_hash() {
-                return false;
+                return Err(Error::BlockchainError("Invalid block hash".to_string()));
             }
         }
-        true
+        Ok(())
     }
 
     pub fn get_asset_token(&self, asset_id: &str) -> Option<&CurrencyType> {
@@ -96,25 +99,33 @@ impl Blockchain {
         self.bonds.get(bond_id)
     }
 
-    pub fn add_asset_token(&mut self, asset_id: String, currency_type: CurrencyType) {
+    pub fn add_asset_token(&mut self, asset_id: String, currency_type: CurrencyType) -> Result<()> {
+        if self.asset_tokens.contains_key(&asset_id) {
+            return Err(Error::BlockchainError("Asset token already exists".to_string()));
+        }
         self.asset_tokens.insert(asset_id, currency_type);
+        Ok(())
     }
 
-    pub fn add_bond(&mut self, bond_id: String, currency_type: CurrencyType) {
+    pub fn add_bond(&mut self, bond_id: String, currency_type: CurrencyType) -> Result<()> {
+        if self.bonds.contains_key(&bond_id) {
+            return Err(Error::BlockchainError("Bond already exists".to_string()));
+        }
         self.bonds.insert(bond_id, currency_type);
+        Ok(())
     }
 
-    pub fn execute_smart_contracts(&mut self) -> Result<(), String> {
+    pub fn execute_smart_contracts(&mut self) -> Result<()> {
         // Implement smart contract execution logic here
         Ok(())
     }
 
-    pub fn transfer_asset_token(&mut self, _asset_id: &str, _new_owner: &str) -> Result<(), String> {
+    pub fn transfer_asset_token(&mut self, asset_id: &str, new_owner: &str) -> Result<()> {
         // Implement asset token transfer logic here
         Ok(())
     }
 
-    pub fn transfer_bond(&mut self, _bond_id: &str, _new_owner: &str) -> Result<(), String> {
+    pub fn transfer_bond(&mut self, bond_id: &str, new_owner: &str) -> Result<()> {
         // Implement bond transfer logic here
         Ok(())
     }

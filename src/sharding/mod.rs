@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use sha2::{Sha256, Digest};
-use crate::blockchain::Block;
-use crate::blockchain::Transaction;
+use crate::blockchain::{Block, Transaction};
 use crate::network::Node;
 use crate::currency::CurrencyType;
 use std::sync::{Arc, Mutex};
 use ed25519_dalek::{PublicKey, Signature, Verifier};
 use log::{info, error, warn, debug};
+use crate::error::{Error, Result};
 
 pub mod cross_shard_communication;
 
@@ -53,27 +53,34 @@ impl ShardingManager {
         self.shard_count
     }
     
-    pub fn process_transaction(&mut self, shard_id: usize, transaction: &Transaction) -> Result<(), String> {
+    pub fn process_transaction(&mut self, shard_id: u64, transaction: &Transaction) -> Result<()> {
         self.withdraw(&transaction.from, &transaction.currency_type, transaction.amount, shard_id)?;
         self.deposit(&transaction.to, &transaction.currency_type, transaction.amount, shard_id)?;
         Ok(())
     }
 
-    fn withdraw(&mut self, _from: &str, _currency_type: &CurrencyType, _amount: f64, _shard_id: usize) -> Result<(), String> {
-        // Implement the logic for withdrawing funds from the specified account in the specified shard.
-        // Return Ok(()) if successful, or an error message if there was a problem.
-        // Example implementation:
+    fn withdraw(&mut self, from: &str, currency_type: &CurrencyType, amount: f64, shard_id: u64) -> Result<()> {
+        let shard = self.shards.get(&shard_id).ok_or(Error::ShardingError(format!("Shard {} not found", shard_id)))?;
+        let mut shard = shard.lock().unwrap();
+        let sender_balances = shard.balances.entry(from.to_string()).or_insert_with(HashMap::new);
+        let sender_balance = sender_balances.entry(currency_type.clone()).or_insert(0.0);
+        if *sender_balance < amount {
+            return Err(Error::ShardingError("Insufficient balance".to_string()));
+        }
+        *sender_balance -= amount;
         Ok(())
     }
 
-    fn deposit(&mut self, _to: &str, _currency_type: &CurrencyType, _amount: f64, _shard_id: usize) -> Result<(), String> {
-        // Implement the logic for depositing funds into the specified account in the specified shard.
-        // Return Ok(()) if successful, or an error message if there was a problem.
-        // Example implementation:
+    fn deposit(&mut self, to: &str, currency_type: &CurrencyType, amount: f64, shard_id: u64) -> Result<()> {
+        let shard = self.shards.get(&shard_id).ok_or(Error::ShardingError(format!("Shard {} not found", shard_id)))?;
+        let mut shard = shard.lock().unwrap();
+        let recipient_balances = shard.balances.entry(to.to_string()).or_insert_with(HashMap::new);
+        let recipient_balance = recipient_balances.entry(currency_type.clone()).or_insert(0.0);
+        *recipient_balance += amount;
         Ok(())
     }
 
-    pub fn add_balance(&mut self, address: &str, currency_type: CurrencyType, amount: f64) -> Result<(), String> {
+    pub fn add_balance(&mut self, address: &str, currency_type: CurrencyType, amount: f64) -> Result<()> {
         let shard_id = self.get_shard_for_address(address);
         if let Some(shard) = self.shards.get_mut(&shard_id) {
             let mut shard = shard.lock().unwrap();
@@ -92,7 +99,7 @@ impl ShardingManager {
     }
 
     /// Assigns a node to a shard
-    pub fn assign_node_to_shard(&mut self, node: Node, shard_id: u64) -> Result<(), String> {
+    pub fn assign_node_to_shard(&mut self, node: Node, shard_id: u64) -> Result<()> {
         let shard = self.shards.get(&shard_id).ok_or(format!("Shard {} not found", shard_id))?;
         let mut shard = shard.lock().unwrap();
         if shard.nodes.len() >= self.nodes_per_shard {
@@ -155,24 +162,20 @@ impl ShardingManager {
     }
 
     /// Handles cross-shard communication
-    pub fn transfer_between_shards(&mut self, from_shard: u64, to_shard: u64, transaction: &Transaction) -> Result<(), String> {
-        let from_shard = self.shards.get(&from_shard).ok_or(format!("From shard {} not found", from_shard))?;
-        let to_shard = self.shards.get(&to_shard).ok_or(format!("To shard {} not found", to_shard))?;
+    pub fn transfer_between_shards(&mut self, from_shard: u64, to_shard: u64, transaction: &Transaction) -> Result<()> {
+        let from_shard = self.shards.get(&from_shard).ok_or(Error::ShardingError(format!("From shard {} not found", from_shard)))?;
+        let to_shard = self.shards.get(&to_shard).ok_or(Error::ShardingError(format!("To shard {} not found", to_shard)))?;
 
-        let mut from_shard = from_shard.lock().unwrap();
-        let mut to_shard = to_shard.lock().unwrap();
+        let mut from_shard = from_shard.lock().map_err(|_| Error::ShardingError("Failed to lock source shard".to_string()))?;
+        let mut to_shard = to_shard.lock().map_err(|_| Error::ShardingError("Failed to lock destination shard".to_string()))?;
 
         debug!("Verifying transaction in source shard: {}", from_shard.id);
         if !self.verify_transaction(&from_shard, transaction) {
-            error!("Transaction verification failed in the source shard");
-            return Err("Transaction verification failed in the source shard".to_string());
+            return Err(Error::ShardingError("Transaction verification failed in the source shard".to_string()));
         }
 
         debug!("Updating balances in source shard: {}", from_shard.id);
-        if let Err(e) = self.update_balances(&mut from_shard, transaction) {
-            error!("Failed to update balances in source shard: {}", e);
-            return Err(e);
-        }
+        self.update_balances(&mut from_shard, transaction)?;
 
         debug!("Creating new block in destination shard: {}", to_shard.id);
         let new_block = Block {
@@ -189,10 +192,7 @@ impl ShardingManager {
         to_shard.blockchain.push(new_block);
 
         debug!("Adding balances in destination shard: {}", to_shard.id);
-        if let Err(e) = self.add_balances(&mut to_shard, transaction) {
-            error!("Failed to add balances: {}", e);
-            return Err(e);
-        }
+        self.add_balances(&mut to_shard, transaction)?;
 
         info!("Transaction moved from shard {} to shard {}", from_shard.id, to_shard.id);
         Ok(())
@@ -232,7 +232,7 @@ impl ShardingManager {
         true // All checks passed
     }
 
-    fn update_balances(&self, shard: &mut Shard, transaction: &Transaction) -> Result<(), String> {
+    fn update_balances(&self, shard: &mut Shard, transaction: &Transaction) -> Result<()> {
         debug!("Updating balances for transaction from {} to {} of amount {}", transaction.from, transaction.to, transaction.amount);
         
         // Deduct from sender
@@ -240,8 +240,7 @@ impl ShardingManager {
         let sender_balance = sender_balances.entry(transaction.currency_type.clone()).or_insert(0.0);
         debug!("Sender initial balance: {}", sender_balance);
         if *sender_balance < transaction.amount {
-            warn!("Insufficient balance for sender: {}", sender_balance);
-            return Err("Insufficient balance".to_string());
+            return Err(Error::ShardingError("Insufficient balance".to_string()));
         }
         *sender_balance -= transaction.amount;
         debug!("Sender balance after deduction: {}", sender_balance);
@@ -249,7 +248,7 @@ impl ShardingManager {
         Ok(())
     }
 
-    fn add_balances(&self, shard: &mut Shard, transaction: &Transaction) -> Result<(), String> {
+    fn add_balances(&self, shard: &mut Shard, transaction: &Transaction) -> Result<()> {
         debug!("Adding balances for transaction from {} to {} of amount {}", transaction.from, transaction.to, transaction.amount);
 
         // Add to recipient
@@ -262,30 +261,25 @@ impl ShardingManager {
         Ok(())
     }
 
-    fn calculate_block_hash(&self, blockchain: &[Block], transaction: &Transaction) -> String {
+    fn calculate_block_hash(&self, blockchain: &Vec<Block>, transaction: &Transaction) -> String {
         let mut hasher = Sha256::new();
-        if let Some(last_block) = blockchain.last() {
-            hasher.update(&last_block.hash);
-        }
+        hasher.update(blockchain.len().to_string().as_bytes());
         hasher.update(transaction.to_bytes());
-        let result = hasher.finalize();
-        hex::encode(result)
+        format!("{:x}", hasher.finalize())
     }
 
     fn hash_data(&self, data: &[u8]) -> u64 {
         let mut hasher = Sha256::new();
         hasher.update(data);
         let result = hasher.finalize();
-        
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&result[..8]);
-        u64::from_be_bytes(bytes)
+        let hash_bytes: [u8; 8] = result[..8].try_into().unwrap_or([0; 8]);
+        u64::from_le_bytes(hash_bytes)
     }
+}
 
-    // Set the current shard ID (for testing purposes)
-    pub fn set_current_shard_id(&mut self, shard_id: u64) {
-        self.current_shard_id = shard_id;
-        info!("Set current shard ID to {}", shard_id);
+impl Transaction {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        [self.from.as_bytes(), self.to.as_bytes(), &self.amount.to_le_bytes()].concat()
     }
 }
 
@@ -354,18 +348,14 @@ mod tests {
         let mut csprng = rand::rngs::OsRng{};
         let keypair: Keypair = Keypair::generate(&mut csprng);
 
-        let mut transaction = Transaction::new(
-            "Alice".to_string(),
-            "Bob".to_string(),
-            100.0,
-            CurrencyType::BasicNeeds,
-            1000,
-        );
-
-        let message = transaction.to_bytes();
-        let signature = keypair.sign(&message);
-        transaction.signature = Some(signature.to_bytes().to_vec());
-        transaction.public_key = Some(keypair.public.to_bytes().to_vec());
+        let transaction = Transaction {
+            from: "Alice".to_string(),
+            to: "Bob".to_string(),
+            amount: 100.0,
+            currency_type: CurrencyType::BasicNeeds,
+            public_key: Some(keypair.public.to_bytes().to_vec()),
+            signature: Some(keypair.sign(b"Transaction").to_bytes().to_vec()),
+        };
 
         manager.add_address_to_shard("Alice".to_string(), 0);
         manager.add_address_to_shard("Bob".to_string(), 1);
