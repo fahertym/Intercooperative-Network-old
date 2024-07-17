@@ -331,6 +331,7 @@ use tokio::sync::RwLock;
 use std::sync::Arc;
 use futures::future;
 use chrono::Utc;
+use crate::error::{Error, Result};
 
 pub struct Block {
     pub index: u64,
@@ -396,13 +397,14 @@ impl Blockchain {
         }
     }
 
-    pub async fn add_transaction(&self, transaction: Transaction) -> Result<(), String> {
+    pub async fn add_transaction(&self, transaction: Transaction) -> Result<()> {
+        // Add validation logic here if needed
         let mut pending_transactions = self.pending_transactions.write().await;
         pending_transactions.push(transaction);
         Ok(())
     }
 
-    pub async fn create_block(&self, miner: String) -> Result<(), String> {
+    pub async fn create_block(&self, miner: String) -> Result<()> {
         let pending_transactions = {
             let mut pt = self.pending_transactions.write().await;
             std::mem::take(&mut *pt)
@@ -410,7 +412,7 @@ impl Blockchain {
 
         let last_block = {
             let chain = self.chain.read().await;
-            chain.last().cloned().ok_or("Chain is empty")?
+            chain.last().cloned().ok_or(Error::BlockchainError("Chain is empty".to_string()))?
         };
 
         let new_block = Block::new(
@@ -422,7 +424,7 @@ impl Blockchain {
 
         // Validate the new block
         if !self.is_valid_block(&new_block, &last_block).await {
-            return Err("Invalid block".to_string());
+            return Err(Error::BlockchainError("Invalid block".to_string()));
         }
 
         // Add the new block to the chain
@@ -470,10 +472,10 @@ impl Blockchain {
         future::join_all(transaction_futures).await;
     }
 
-    async fn process_transaction(&self, transaction: Transaction) -> Result<(), String> {
+    async fn process_transaction(&self, transaction: Transaction) -> Result<()> {
         // Validate transaction
         if !self.is_valid_transaction(&transaction).await {
-            return Err("Invalid transaction".to_string());
+            return Err(Error::BlockchainError("Invalid transaction".to_string()));
         }
 
         // Process the transaction
@@ -529,7 +531,8 @@ mod tests {
         assert_eq!(blockchain.get_balance("Alice").await, -50.0);
         assert_eq!(blockchain.get_balance("Bob").await, 50.0);
     }
-}===== END OF src/blockchain/blockchain.rs =====
+}
+===== END OF src/blockchain/blockchain.rs =====
 
 ===== START OF src/blockchain/block.rs =====
 // src/blockchain/block.rs
@@ -1427,6 +1430,56 @@ mod currency;
 
 pub use self::currency::CurrencyType;===== END OF src/currency/mod.rs =====
 
+===== START OF src/error.rs =====
+// src/error.rs
+
+use std::fmt;
+use std::error::Error as StdError;
+
+#[derive(Debug)]
+pub enum Error {
+    BlockchainError(String),
+    ConsensusError(String),
+    GovernanceError(String),
+    ShardingError(String),
+    NetworkError(String),
+    SmartContractError(String),
+    VmError(String),
+    IoError(std::io::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::BlockchainError(msg) => write!(f, "Blockchain error: {}", msg),
+            Error::ConsensusError(msg) => write!(f, "Consensus error: {}", msg),
+            Error::GovernanceError(msg) => write!(f, "Governance error: {}", msg),
+            Error::ShardingError(msg) => write!(f, "Sharding error: {}", msg),
+            Error::NetworkError(msg) => write!(f, "Network error: {}", msg),
+            Error::SmartContractError(msg) => write!(f, "Smart contract error: {}", msg),
+            Error::VmError(msg) => write!(f, "VM error: {}", msg),
+            Error::IoError(e) => write!(f, "I/O error: {}", e),
+        }
+    }
+}
+
+impl StdError for Error {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            Error::IoError(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::IoError(err)
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;===== END OF src/error.rs =====
+
 ===== START OF src/governance/democracy.rs =====
 // src/governance/democracy.rs
 
@@ -1838,6 +1891,8 @@ pub mod smart_contract;
 pub mod vm;
 pub mod sharding;
 pub mod api;
+pub mod error;
+
 
 pub use blockchain::{Block, Transaction, Blockchain};
 pub use currency::CurrencyType;
@@ -2010,12 +2065,14 @@ use std::error::Error;
 use icn_node::blockchain::Transaction;
 use icn_node::consensus::PoCConsensus;
 use icn_node::currency::CurrencyType;
-use icn_node::governance::DemocraticSystem;
+use icn_node::governance::{DemocraticSystem, ProposalType, ProposalCategory};
 use icn_node::identity::DecentralizedIdentity;
 use icn_node::network::Network;
 use icn_node::network::node::{Node, NodeType};
 use icn_node::vm::CSCLCompiler;
 use icn_node::IcnNode;
+use icn_node::network::network::{Packet, PacketType};
+use icn_node::governance::democracy::ProposalStatus;
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -2167,10 +2224,9 @@ fn print_final_state(node: &IcnNode, consensus: &PoCConsensus, democratic_system
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::currency::CurrencyType;
+    use icn_node::currency::CurrencyType;
     use ed25519_dalek::Keypair;
     use rand::rngs::OsRng;
-
 
     #[test]
     fn test_icn_node_creation() {
@@ -2248,7 +2304,7 @@ mod tests {
         info!("Smart contract execution test passed");
     }
 
-    #[test]
+   #[test]
     fn test_democratic_system() {
         let mut democratic_system = DemocraticSystem::new();
         

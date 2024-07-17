@@ -13,6 +13,8 @@ pub mod smart_contract;
 pub mod vm;
 pub mod sharding;
 pub mod api;
+pub mod error;
+
 
 pub use blockchain::{Block, Transaction, Blockchain};
 pub use currency::CurrencyType;

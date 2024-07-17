@@ -6,12 +6,14 @@ use std::error::Error;
 use icn_node::blockchain::Transaction;
 use icn_node::consensus::PoCConsensus;
 use icn_node::currency::CurrencyType;
-use icn_node::governance::DemocraticSystem;
+use icn_node::governance::{DemocraticSystem, ProposalType, ProposalCategory};
 use icn_node::identity::DecentralizedIdentity;
 use icn_node::network::Network;
 use icn_node::network::node::{Node, NodeType};
 use icn_node::vm::CSCLCompiler;
 use icn_node::IcnNode;
+use icn_node::network::network::{Packet, PacketType};
+use icn_node::governance::democracy::ProposalStatus;
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -163,10 +165,9 @@ fn print_final_state(node: &IcnNode, consensus: &PoCConsensus, democratic_system
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::currency::CurrencyType;
+    use icn_node::currency::CurrencyType;
     use ed25519_dalek::Keypair;
     use rand::rngs::OsRng;
-
 
     #[test]
     fn test_icn_node_creation() {
@@ -244,7 +245,7 @@ mod tests {
         info!("Smart contract execution test passed");
     }
 
-    #[test]
+   #[test]
     fn test_democratic_system() {
         let mut democratic_system = DemocraticSystem::new();
         

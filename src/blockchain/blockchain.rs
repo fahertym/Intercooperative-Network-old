@@ -2,6 +2,7 @@ use tokio::sync::RwLock;
 use std::sync::Arc;
 use futures::future;
 use chrono::Utc;
+use crate::error::{Error, Result};
 
 pub struct Block {
     pub index: u64,
@@ -67,13 +68,14 @@ impl Blockchain {
         }
     }
 
-    pub async fn add_transaction(&self, transaction: Transaction) -> Result<(), String> {
+    pub async fn add_transaction(&self, transaction: Transaction) -> Result<()> {
+        // Add validation logic here if needed
         let mut pending_transactions = self.pending_transactions.write().await;
         pending_transactions.push(transaction);
         Ok(())
     }
 
-    pub async fn create_block(&self, miner: String) -> Result<(), String> {
+    pub async fn create_block(&self, miner: String) -> Result<()> {
         let pending_transactions = {
             let mut pt = self.pending_transactions.write().await;
             std::mem::take(&mut *pt)
@@ -81,7 +83,7 @@ impl Blockchain {
 
         let last_block = {
             let chain = self.chain.read().await;
-            chain.last().cloned().ok_or("Chain is empty")?
+            chain.last().cloned().ok_or(Error::BlockchainError("Chain is empty".to_string()))?
         };
 
         let new_block = Block::new(
@@ -93,7 +95,7 @@ impl Blockchain {
 
         // Validate the new block
         if !self.is_valid_block(&new_block, &last_block).await {
-            return Err("Invalid block".to_string());
+            return Err(Error::BlockchainError("Invalid block".to_string()));
         }
 
         // Add the new block to the chain
@@ -141,10 +143,10 @@ impl Blockchain {
         future::join_all(transaction_futures).await;
     }
 
-    async fn process_transaction(&self, transaction: Transaction) -> Result<(), String> {
+    async fn process_transaction(&self, transaction: Transaction) -> Result<()> {
         // Validate transaction
         if !self.is_valid_transaction(&transaction).await {
-            return Err("Invalid transaction".to_string());
+            return Err(Error::BlockchainError("Invalid transaction".to_string()));
         }
 
         // Process the transaction
