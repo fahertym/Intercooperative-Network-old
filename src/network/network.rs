@@ -1,25 +1,9 @@
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use crate::blockchain::Block;
-use crate::network::node::NodeType;
+use super::node::Node;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Node {
-    pub id: String,
-    pub node_type: NodeType,
-    pub address: String,
-}
-
-impl Node {
-    pub fn new(id: &str, node_type: NodeType, address: &str) -> Self {
-        Node {
-            id: id.to_string(),
-            node_type,
-            address: address.to_string(),
-        }
-    }
-}
-
 pub struct Network {
     nodes: HashMap<String, Node>,
 }
@@ -51,7 +35,6 @@ impl Network {
     pub fn synchronize_blockchain(&self, _blockchain: &[Block]) {
         // Implement synchronization logic here
     }
-    
 
     pub fn get_all_nodes(&self) -> Vec<&Node> {
         self.nodes.values().collect()
@@ -78,6 +61,7 @@ pub struct Packet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::node::NodeType;
 
     #[test]
     fn test_network_operations() {
@@ -110,8 +94,7 @@ mod tests {
         };
         network.broadcast_block(&block);
 
-        let blockchain = vec![block];
-        network.synchronize_blockchain(&blockchain);
+        network.synchronize_blockchain(&[block]);
     }
 
     #[test]

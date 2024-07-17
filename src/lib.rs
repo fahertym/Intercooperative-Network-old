@@ -2,8 +2,8 @@ use std::sync::{Arc, RwLock};
 use std::error::Error;
 use std::fmt;
 
-pub mod consensus;
 pub mod blockchain;
+pub mod consensus;
 pub mod currency;
 pub mod governance;
 pub mod identity;
@@ -25,7 +25,7 @@ pub use vm::{CoopVM, Opcode};
 pub use sharding::ShardingManager;
 
 #[derive(Debug)]
-struct CustomError(String);
+pub struct CustomError(String);
 
 impl Error for CustomError {}
 
@@ -71,17 +71,11 @@ impl IcnNode {
 
         if from_shard != to_shard {
             sharding_manager.transfer_between_shards(from_shard, to_shard, transaction)
-                .map_err(|e| {
-                    println!("Error transferring between shards: {}", e);
-                    Box::new(CustomError(e)) as Box<dyn Error>
-                })
+                .map_err(|e| Box::new(CustomError(e)) as Box<dyn Error>)
         } else {
             // Process transaction within the same shard
             sharding_manager.process_transaction(from_shard.try_into().unwrap(), transaction)
-                .map_err(|e| {
-                    println!("Error processing transaction in the same shard: {}", e);
-                    Box::new(CustomError(e)) as Box<dyn Error>
-                })
+                .map_err(|e| Box::new(CustomError(e)) as Box<dyn Error>)
         }
     }
 

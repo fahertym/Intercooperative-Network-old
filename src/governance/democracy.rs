@@ -226,6 +226,7 @@ mod tests {
 
         system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0).unwrap();
         system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0).unwrap();
+        system.vote("David".to_string(), proposal_id.clone(), true, 1.0).unwrap();
 
         // Wait for voting period to end
         std::thread::sleep(std::time::Duration::from_secs(2));

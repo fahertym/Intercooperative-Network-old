@@ -28,6 +28,31 @@ pub struct ShardingManager {
 }
 
 impl ShardingManager {
+    pub fn new(shard_count: u64, nodes_per_shard: usize) -> Self {
+        let mut shards = HashMap::new();
+        for i in 0..shard_count {
+            shards.insert(i, Arc::new(Mutex::new(Shard {
+                id: i,
+                nodes: Vec::new(),
+                blockchain: Vec::new(),
+                balances: HashMap::new(),
+            })));
+        }
+        
+        info!("Created new ShardingManager with {} shards and {} nodes per shard", shard_count, nodes_per_shard);
+        ShardingManager {
+            shards,
+            shard_count,
+            nodes_per_shard,
+            address_to_shard: HashMap::new(),
+            current_shard_id: 0,
+        }
+    }
+
+    pub fn get_shard_count(&self) -> u64 {
+        self.shard_count
+    }
+    
     pub fn process_transaction(&mut self, shard_id: usize, transaction: &Transaction) -> Result<(), String> {
         self.withdraw(&transaction.from, &transaction.currency_type, transaction.amount, shard_id)?;
         self.deposit(&transaction.to, &transaction.currency_type, transaction.amount, shard_id)?;
@@ -63,28 +88,6 @@ impl ShardingManager {
         } else {
             error!("Shard {} not found", shard_id);
             Err(format!("Shard {} not found", shard_id))
-        }
-    }
-
-    /// Creates a new ShardingManager
-    pub fn new(shard_count: u64, nodes_per_shard: usize) -> Self {
-        let mut shards = HashMap::new();
-        for i in 0..shard_count {
-            shards.insert(i, Arc::new(Mutex::new(Shard {
-                id: i,
-                nodes: Vec::new(),
-                blockchain: Vec::new(),
-                balances: HashMap::new(),
-            })));
-        }
-        
-        info!("Created new ShardingManager with {} shards and {} nodes per shard", shard_count, nodes_per_shard);
-        ShardingManager {
-            shards,
-            shard_count,
-            nodes_per_shard,
-            address_to_shard: HashMap::new(),
-            current_shard_id: 0,
         }
     }
 
@@ -285,8 +288,6 @@ impl ShardingManager {
         info!("Set current shard ID to {}", shard_id);
     }
 }
-
-// ... (previous code remains the same)
 
 #[cfg(test)]
 mod tests {
