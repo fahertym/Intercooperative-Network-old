@@ -66,13 +66,21 @@ impl IcnNode {
         let from_shard = sharding_manager.get_shard_for_address(&transaction.from);
         let to_shard = sharding_manager.get_shard_for_address(&transaction.to);
 
+        println!("Processing transaction from shard {} to shard {}", from_shard, to_shard);
+
         if from_shard != to_shard {
             sharding_manager.transfer_between_shards(from_shard, to_shard, transaction)
-                .map_err(|e| Box::new(CustomError(e)) as Box<dyn Error>)
+                .map_err(|e| {
+                    println!("Error transferring between shards: {}", e);
+                    Box::new(CustomError(e)) as Box<dyn Error>
+                })
         } else {
             // Process transaction within the same shard
             sharding_manager.process_transaction(from_shard.try_into().unwrap(), transaction)
-                .map_err(|e| Box::new(CustomError(e)) as Box<dyn Error>)
+                .map_err(|e| {
+                    println!("Error processing transaction in the same shard: {}", e);
+                    Box::new(CustomError(e)) as Box<dyn Error>
+                })
         }
     }
 
