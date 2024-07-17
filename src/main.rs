@@ -191,7 +191,7 @@ fn create_and_vote_on_proposal(democratic_system: &mut DemocraticSystem) -> Resu
         governance::ProposalCategory::Economic,
         0.51,
         Some(Utc::now() + chrono::Duration::days(30)),
-    );
+    )?;
 
     democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0)?;
     democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0)?;

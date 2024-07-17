@@ -1,3 +1,3 @@
 mod currency;
 
-pub use self::currency::{CurrencyType, Currency, CurrencySystem, Wallet};
+pub use self::currency::CurrencyType;

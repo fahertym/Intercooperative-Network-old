@@ -1,4 +1,3 @@
-// src/currency/currency.rs
 use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
@@ -40,6 +39,7 @@ pub struct Currency {
 }
 
 impl Currency {
+    #[allow(dead_code)]
     pub fn new(currency_type: CurrencyType, initial_supply: f64, issuance_rate: f64) -> Self {
         let now = Utc::now();
         Currency {
@@ -51,6 +51,7 @@ impl Currency {
         }
     }
 
+    #[allow(dead_code)]
     pub fn mint(&mut self, amount: f64) {
         self.total_supply += amount;
         self.last_issuance = Utc::now();
@@ -63,6 +64,7 @@ pub struct CurrencySystem {
 }
 
 impl CurrencySystem {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         let mut system = CurrencySystem {
             currencies: HashMap::new(),
@@ -82,19 +84,23 @@ impl CurrencySystem {
         system
     }
 
+    #[allow(dead_code)]
     pub fn add_currency(&mut self, currency_type: CurrencyType, initial_supply: f64, issuance_rate: f64) {
         let currency = Currency::new(currency_type.clone(), initial_supply, issuance_rate);
         self.currencies.insert(currency_type, currency);
     }
 
+    #[allow(dead_code)]
     pub fn get_currency(&self, currency_type: &CurrencyType) -> Option<&Currency> {
         self.currencies.get(currency_type)
     }
 
+    #[allow(dead_code)]
     pub fn get_currency_mut(&mut self, currency_type: &CurrencyType) -> Option<&mut Currency> {
         self.currencies.get_mut(currency_type)
     }
 
+    #[allow(dead_code)]
     pub fn create_custom_currency(&mut self, name: String, initial_supply: f64, issuance_rate: f64) -> Result<(), String> {
         let currency_type = CurrencyType::Custom(name.clone());
         if self.currencies.contains_key(&currency_type) {
@@ -104,6 +110,7 @@ impl CurrencySystem {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn adaptive_issuance(&mut self) {
         let now = Utc::now();
         for currency in self.currencies.values_mut() {
@@ -120,16 +127,19 @@ pub struct Wallet {
 }
 
 impl Wallet {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Wallet {
             balances: HashMap::new(),
         }
     }
 
+    #[allow(dead_code)]
     pub fn deposit(&mut self, currency_type: CurrencyType, amount: f64) {
         *self.balances.entry(currency_type).or_insert(0.0) += amount;
     }
 
+    #[allow(dead_code)]
     pub fn withdraw(&mut self, currency_type: CurrencyType, amount: f64) -> Result<(), String> {
         let balance = self.balances.entry(currency_type.clone()).or_insert(0.0);
         if *balance < amount {
@@ -139,8 +149,8 @@ impl Wallet {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_balance(&self, currency_type: &CurrencyType) -> f64 {
         *self.balances.get(currency_type).unwrap_or(&0.0)
     }
 }
-

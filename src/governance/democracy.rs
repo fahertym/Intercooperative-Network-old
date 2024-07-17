@@ -1,4 +1,3 @@
-// src/governance/democracy.rs
 use std::collections::HashMap;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Serialize, Deserialize};
@@ -74,7 +73,7 @@ impl DemocraticSystem {
         category: ProposalCategory,
         required_quorum: f64,
         execution_timestamp: Option<DateTime<Utc>>
-    ) -> String {
+    ) -> Result<String, String> {
         let id = format!("prop_{}", Utc::now().timestamp());
         let proposal = Proposal {
             id: id.clone(),
@@ -91,7 +90,7 @@ impl DemocraticSystem {
         };
         self.proposals.insert(id.clone(), proposal);
         info!("New proposal created: {}", id);
-        id
+        Ok(id)
     }
 
     pub fn vote(
@@ -102,7 +101,7 @@ impl DemocraticSystem {
         weight: f64
     ) -> Result<(), String> {
         let proposal = self.proposals.get(&proposal_id).ok_or("Proposal not found")?;
-
+        
         if proposal.status != ProposalStatus::Active {
             error!("Attempted to vote on inactive proposal: {}", proposal_id);
             return Err("Voting is not active for this proposal".to_string());
@@ -128,7 +127,7 @@ impl DemocraticSystem {
 
     pub fn tally_votes(&mut self, proposal_id: &str) -> Result<(), String> {
         let proposal = self.proposals.get_mut(proposal_id).ok_or("Proposal not found")?;
-
+        
         if proposal.status != ProposalStatus::Active {
             error!("Attempted to tally votes for inactive proposal: {}", proposal_id);
             return Err("Proposal is not active".to_string());
@@ -140,7 +139,7 @@ impl DemocraticSystem {
         }
 
         let votes = self.votes.get(proposal_id).ok_or("No votes found for this proposal")?;
-
+        
         let total_weight: f64 = votes.iter().map(|v| v.weight).sum();
         let weight_in_favor: f64 = votes.iter().filter(|v| v.in_favor).map(|v| v.weight).sum();
 
@@ -177,7 +176,7 @@ impl DemocraticSystem {
 
     pub fn mark_as_implemented(&mut self, proposal_id: &str) -> Result<(), String> {
         let proposal = self.proposals.get_mut(proposal_id).ok_or("Proposal not found")?;
-
+        
         if proposal.status != ProposalStatus::Passed {
             error!("Attempted to mark non-passed proposal as implemented: {}", proposal_id);
             return Err("Proposal has not passed".to_string());
@@ -186,5 +185,55 @@ impl DemocraticSystem {
         proposal.status = ProposalStatus::Implemented;
         info!("Proposal {} marked as implemented", proposal_id);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_proposal() {
+        let mut system = DemocraticSystem::new();
+        let result = system.create_proposal(
+            "Test Proposal".to_string(),
+            "This is a test proposal".to_string(),
+            "Alice".to_string(),
+            Duration::days(7),
+            ProposalType::Constitutional,
+            ProposalCategory::Technical,
+            0.5,
+            None,
+        );
+        assert!(result.is_ok());
+        let proposal_id = result.unwrap();
+        assert!(system.get_proposal(&proposal_id).is_some());
+    }
+
+    #[test]
+    fn test_vote_and_tally() {
+        let mut system = DemocraticSystem::new();
+        let proposal_id = system.create_proposal(
+            "Test Proposal".to_string(),
+            "This is a test proposal".to_string(),
+            "Alice".to_string(),
+            Duration::seconds(1), // Short duration for testing
+            ProposalType::Constitutional,
+            ProposalCategory::Technical,
+            0.5,
+            None,
+        ).unwrap();
+
+        system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0).unwrap();
+        system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0).unwrap();
+
+        // Wait for voting period to end
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let tally_result = system.tally_votes(&proposal_id);
+        assert!(tally_result.is_ok());
+
+        let proposal = system.get_proposal(&proposal_id).unwrap();
+        assert_eq!(proposal.status, ProposalStatus::Passed);
     }
 }

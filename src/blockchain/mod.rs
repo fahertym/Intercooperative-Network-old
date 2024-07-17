@@ -35,11 +35,13 @@ impl Blockchain {
         blockchain
     }
 
-    pub fn add_transaction(&mut self, transaction: Transaction) {
+    pub fn add_transaction(&mut self, transaction: Transaction) -> Result<(), String> {
+        // Add validation logic here if needed
         self.pending_transactions.push(transaction);
+        Ok(())
     }
 
-    pub fn create_block(&mut self, _author: String) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn create_block(&mut self, _author: String) -> Result<(), String> {
         let previous_block = self.chain.last().ok_or("No previous block found")?;
         let new_block = Block::new(
             self.chain.len() as u64,
@@ -54,5 +56,20 @@ impl Blockchain {
 
     pub fn get_latest_block(&self) -> Option<&Block> {
         self.chain.last()
+    }
+
+    pub fn get_balance(&self, address: &str) -> f64 {
+        let mut balance = 0.0;
+        for block in &self.chain {
+            for transaction in &block.transactions {
+                if transaction.from == address {
+                    balance -= transaction.amount;
+                }
+                if transaction.to == address {
+                    balance += transaction.amount;
+                }
+            }
+        }
+        balance
     }
 }
