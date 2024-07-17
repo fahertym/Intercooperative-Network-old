@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use crate::blockchain::Block;
-use crate::network::node::NodeType; // Ensure correct import
+use crate::network::node::NodeType;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Node {
@@ -45,11 +45,34 @@ impl Network {
 
     pub fn broadcast_block(&self, block: &Block) {
         println!("Broadcasting block {} to all nodes", block.index);
+        // Actual implementation would involve network communication
     }
 
     pub fn synchronize_blockchain(&self, _blockchain: &[Block]) {
-        println!("Synchronizing blockchain across all nodes");
+        // Implement synchronization logic here
     }
+    
+
+    pub fn get_all_nodes(&self) -> Vec<&Node> {
+        self.nodes.values().collect()
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum PacketType {
+    Interest,
+    Data,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Packet {
+    pub packet_type: PacketType,
+    pub name: String,
+    pub content: Vec<u8>,
 }
 
 #[cfg(test)]
@@ -65,14 +88,14 @@ mod tests {
         network.add_node(node1.clone());
         network.add_node(node2.clone());
 
-        assert_eq!(network.nodes.len(), 2);
+        assert_eq!(network.node_count(), 2);
 
         let retrieved_node = network.get_node("node1").unwrap();
         assert_eq!(retrieved_node.id, "node1");
         assert_eq!(retrieved_node.address, "192.168.1.1");
 
         network.remove_node("node1");
-        assert_eq!(network.nodes.len(), 1);
+        assert_eq!(network.node_count(), 1);
         assert!(network.get_node("node1").is_none());
 
         let block = Block {
@@ -87,19 +110,24 @@ mod tests {
         };
         network.broadcast_block(&block);
 
-        network.synchronize_blockchain(&vec![block]);
+        let blockchain = vec![block];
+        network.synchronize_blockchain(&blockchain);
     }
-}
 
-#[derive(Clone, Debug)]
-pub enum PacketType {
-    Interest,
-    Data,
-}
+    #[test]
+    fn test_packet_creation() {
+        let packet = Packet {
+            packet_type: PacketType::Interest,
+            name: "test_packet".to_string(),
+            content: vec![1, 2, 3, 4],
+        };
 
-#[derive(Clone, Debug)]
-pub struct Packet {
-    pub packet_type: PacketType,
-    pub name: String,
-    pub content: Vec<u8>,
+        assert_eq!(packet.name, "test_packet");
+        assert_eq!(packet.content, vec![1, 2, 3, 4]);
+
+        match packet.packet_type {
+            PacketType::Interest => assert!(true),
+            _ => assert!(false, "Unexpected packet type"),
+        }
+    }
 }

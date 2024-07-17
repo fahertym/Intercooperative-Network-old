@@ -1,4 +1,4 @@
-use log::{debug, info, warn};
+use log::{info, warn};
 use chrono::Utc;
 use std::collections::HashMap;
 use std::error::Error;
@@ -22,6 +22,7 @@ use currency::CurrencyType;
 use governance::DemocraticSystem;
 use identity::DecentralizedIdentity;
 use network::{Network, Packet, PacketType};
+use network::network::Node as NetworkNode; // Import the correct Node type
 use node::{ContentStore, ForwardingInformationBase, PendingInterestTable};
 use vm::{CoopVM, Opcode, CSCLCompiler};
 use sharding::ShardingManager;
@@ -61,7 +62,7 @@ impl IcnNode {
     }
 
     fn process_interest(&self, packet: Packet) -> Result<(), Box<dyn Error>> {
-        let content = self.content_store.write().unwrap().get_and_pop(&packet.name);
+        let content = self.content_store.write().unwrap().get(&packet.name);
 
         if let Some(_data) = content {
             info!("Sending data for interest: {}", packet.name);
@@ -86,25 +87,16 @@ impl IcnNode {
         let mut sharding_manager = self.sharding_manager.write().unwrap();
         let from_shard = sharding_manager.get_shard_for_address(&transaction.from);
         let to_shard = sharding_manager.get_shard_for_address(&transaction.to);
-    
-        let sharding_transaction = BlockchainTransaction {
-            from: transaction.from.clone(),
-            to: transaction.to.clone(),
-            amount: transaction.amount,
-            currency_type: transaction.currency_type.clone(),
-            gas_limit: transaction.gas_limit,
-            smart_contract_id: transaction.smart_contract_id.clone(),
-            signature: transaction.signature.clone(),
-            public_key: transaction.public_key.clone(),
-        };
-    
+
+        info!("Processing cross-shard transaction from shard {} to shard {}", from_shard, to_shard);
+
         if from_shard != to_shard {
-            sharding_manager.transfer_between_shards(from_shard, to_shard, &sharding_transaction)?;
-            info!("Cross-shard transaction processed successfully");
+            sharding_manager.transfer_between_shards(from_shard, to_shard, transaction)?;
         } else {
-            info!("Transaction is within the same shard");
+            // Process transaction within the same shard
+            sharding_manager.process_transaction(from_shard.try_into().unwrap(), transaction)?;
         }
-    
+
         Ok(())
     }
 
@@ -143,10 +135,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn setup_network_and_consensus(network: &mut Network, consensus: &mut PoCConsensus) -> Result<(), Box<dyn Error>> {
-    let _node1 = network::node::Node::new("Node1", network::node::NodeType::PersonalDevice, "127.0.0.1:8000");
-    let _node2 = network::node::Node::new("Node2", network::node::NodeType::PersonalDevice, "127.0.0.1:8001");
-    network.add_node(network::network::Node { id: "Node1".to_string(), node_type: network::node::NodeType::PersonalDevice, address: "127.0.0.1:8000".to_string() });
-    network.add_node(network::network::Node { id: "Node2".to_string(), node_type: network::node::NodeType::PersonalDevice, address: "127.0.0.1:8001".to_string() });
+    let node1 = NetworkNode::new("Node1", network::node::NodeType::PersonalDevice, "127.0.0.1:8000");
+    let node2 = NetworkNode::new("Node2", network::node::NodeType::PersonalDevice, "127.0.0.1:8001");
+    network.add_node(node1);
+    network.add_node(node2);
 
     consensus.add_member("Alice".to_string(), false);
     consensus.add_member("Bob".to_string(), false);
@@ -168,12 +160,11 @@ fn process_initial_transactions(node: &IcnNode) -> Result<(), Box<dyn Error>> {
         1000
     );
 
-    node.blockchain.write().unwrap().add_transaction(tx);
+    node.blockchain.write().unwrap().add_transaction(tx)?;
     node.blockchain.write().unwrap().create_block("Alice".to_string())?;
 
-    if let Some(_latest_block) = node.blockchain.read().unwrap().get_latest_block() {
-        // Assuming Network has a broadcast_block method
-        // network.broadcast_block(&latest_block);
+    if let Some(latest_block) = node.blockchain.read().unwrap().get_latest_block() {
+        info!("New block created: {:?}", latest_block);
     } else {
         warn!("No blocks in the blockchain to broadcast");
     }
@@ -195,12 +186,17 @@ fn create_and_vote_on_proposal(democratic_system: &mut DemocraticSystem) -> Resu
 
     democratic_system.vote("Bob".to_string(), proposal_id.clone(), true, 1.0)?;
     democratic_system.vote("Charlie".to_string(), proposal_id.clone(), false, 1.0)?;
+    democratic_system.vote("David".to_string(), proposal_id.clone(), true, 1.0)?;
     democratic_system.tally_votes(&proposal_id)?;
+
+    let proposal = democratic_system.get_proposal(&proposal_id)
+        .ok_or("Proposal not found after voting")?;
+    info!("Proposal status after voting: {:?}", proposal.status);
 
     Ok(())
 }
 
-fn compile_and_run_cscl(_node: &IcnNode) -> Result<(), Box<dyn Error>> {
+fn compile_and_run_cscl(node: &IcnNode) -> Result<(), Box<dyn Error>> {
     let cscl_code = r#"
     x = 100 + 50;
     y = 200 - 25;
@@ -208,21 +204,7 @@ fn compile_and_run_cscl(_node: &IcnNode) -> Result<(), Box<dyn Error>> {
     emit("Result", z);
     "#;
 
-    let mut compiler = CSCLCompiler::new(cscl_code);
-    let opcodes = compiler.compile()?;
-
-    info!("Compiled CSCL code into {} opcodes", opcodes.len());
-    for (i, opcode) in opcodes.iter().enumerate() {
-        debug!("Opcode {}: {:?}", i, opcode);
-    }
-
-    let mut coop_vm = CoopVM::new(opcodes);
-    coop_vm.run()?;
-
-    debug!("CoopVM final state:");
-    debug!("Stack: {:?}", coop_vm.get_stack());
-    debug!("Memory: {:?}", coop_vm.get_memory());
-
+    node.execute_smart_contract(cscl_code.to_string())?;
     Ok(())
 }
 
@@ -241,6 +223,9 @@ fn print_final_state(node: &IcnNode, consensus: &PoCConsensus, democratic_system
 
     info!("Democratic system state:");
     info!("Number of active proposals: {}", democratic_system.list_active_proposals().len());
+
+    info!("Sharding state:");
+    info!("Number of shards: {}", node.sharding_manager.read().unwrap().get_shard_count());
 }
 
 #[cfg(test)]
@@ -290,9 +275,12 @@ mod tests {
         let node = IcnNode::new();
 
         // Initialize balances
-        node.sharding_manager.write().unwrap().add_address_to_shard("Alice".to_string(), 0);
-        node.sharding_manager.write().unwrap().add_address_to_shard("Bob".to_string(), 1);
-        node.sharding_manager.write().unwrap().initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+        {
+            let mut sharding_manager = node.sharding_manager.write().unwrap();
+            sharding_manager.add_address_to_shard("Alice".to_string(), 0);
+            sharding_manager.add_address_to_shard("Bob".to_string(), 1);
+            sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+        }
 
         let transaction = BlockchainTransaction::new(
             "Alice".to_string(),
@@ -305,8 +293,23 @@ mod tests {
         assert!(node.process_cross_shard_transaction(&transaction).is_ok());
 
         // Check balances after transaction
-        assert_eq!(node.sharding_manager.read().unwrap().get_balance("Alice".to_string(), CurrencyType::BasicNeeds), 500.0);
-        assert_eq!(node.sharding_manager.read().unwrap().get_balance("Bob".to_string(), CurrencyType::BasicNeeds), 500.0);
+        let sharding_manager = node.sharding_manager.read().unwrap();
+        assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds), 500.0);
+        assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds), 500.0);
         info!("Cross-shard transaction test passed");
+    }
+
+    #[test]
+    fn test_smart_contract_execution() {
+        let node = IcnNode::new();
+        let contract = r#"
+        x = 10 + 5;
+        y = 20 - 3;
+        z = x * y;
+        emit("Result", z);
+        "#;
+
+        assert!(node.execute_smart_contract(contract.to_string()).is_ok());
+        info!("Smart contract execution test passed");
     }
 }
