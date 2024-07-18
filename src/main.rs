@@ -118,7 +118,7 @@ fn simulate_cross_shard_transaction(node: &IcnNode) -> Result<(), Box<dyn Error>
     let mut sharding_manager = node.sharding_manager.write().unwrap();
     sharding_manager.add_address_to_shard("Alice".to_string(), 0);
     sharding_manager.add_address_to_shard("Bob".to_string(), 1);
-    sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+    sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0)?;
     drop(sharding_manager);
 
     let transaction = Transaction::new(
@@ -132,9 +132,9 @@ fn simulate_cross_shard_transaction(node: &IcnNode) -> Result<(), Box<dyn Error>
     node.process_cross_shard_transaction(&transaction)?;
 
     let sharding_manager = node.sharding_manager.read().unwrap();
-    info!("Alice's balance after cross-shard transaction: {}", 
+    info!("Alice's balance after cross-shard transaction: {:?}", 
           sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds));
-    info!("Bob's balance after cross-shard transaction: {}", 
+    info!("Bob's balance after cross-shard transaction: {:?}", 
           sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds));
 
     Ok(())
@@ -211,7 +211,7 @@ mod tests {
             let mut sharding_manager = node.sharding_manager.write().unwrap();
             sharding_manager.add_address_to_shard("Alice".to_string(), 0);
             sharding_manager.add_address_to_shard("Bob".to_string(), 1);
-            sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+            sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0).unwrap();
         }
 
         let mut csprng = OsRng{};
@@ -230,8 +230,8 @@ mod tests {
 
         // Check balances after transaction
         let sharding_manager = node.sharding_manager.read().unwrap();
-        assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds), 500.0);
-        assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds), 500.0);
+        assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds).unwrap(), 500.0);
+        assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds).unwrap(), 500.0);
 
         info!("Cross-shard transaction test passed");
     }
@@ -243,7 +243,7 @@ mod tests {
         info!("Smart contract execution test passed");
     }
 
-   #[test]
+    #[test]
     fn test_democratic_system() {
         let mut democratic_system = DemocraticSystem::new();
         
@@ -305,8 +305,8 @@ mod tests {
         assert!(result.is_ok());
 
         let sharding_manager = node.sharding_manager.read().unwrap();
-        assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds), 500.0);
-        assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds), 500.0);
+        assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds).unwrap(), 500.0);
+        assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds).unwrap(), 500.0);
 
         info!("Sharding test passed");
     }

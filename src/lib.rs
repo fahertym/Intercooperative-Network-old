@@ -90,8 +90,8 @@ impl IcnNode {
 mod tests {
     use super::*;
     use crate::currency::CurrencyType;
-    use ed25519_dalek::Keypair;
     use rand::rngs::OsRng;
+    use ed25519_dalek::Keypair;
 
     #[test]
     fn test_cross_shard_transaction() {
@@ -102,7 +102,7 @@ mod tests {
             let mut sharding_manager = node.sharding_manager.write().unwrap();
             sharding_manager.add_address_to_shard("Alice".to_string(), 0);
             sharding_manager.add_address_to_shard("Bob".to_string(), 1);
-            sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0);
+            sharding_manager.initialize_balance("Alice".to_string(), CurrencyType::BasicNeeds, 1000.0).unwrap();
         }
 
         let mut csprng = OsRng{};
@@ -121,7 +121,7 @@ mod tests {
 
         // Check balances after transaction
         let sharding_manager = node.sharding_manager.read().unwrap();
-        assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds), 500.0);
-        assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds), 500.0);
+        assert_eq!(sharding_manager.get_balance("Alice".to_string(), CurrencyType::BasicNeeds).unwrap(), 500.0);
+        assert_eq!(sharding_manager.get_balance("Bob".to_string(), CurrencyType::BasicNeeds).unwrap(), 500.0);
     }
 }
