@@ -15,7 +15,6 @@ pub mod sharding;
 pub mod api;
 pub mod error;
 
-
 pub use blockchain::{Block, Transaction, Blockchain};
 pub use currency::CurrencyType;
 pub use governance::{DemocraticSystem, ProposalCategory, ProposalType};
@@ -73,11 +72,11 @@ impl IcnNode {
 
         if from_shard != to_shard {
             sharding_manager.transfer_between_shards(from_shard, to_shard, transaction)
-                .map_err(|e| Box::new(CustomError(e)) as Box<dyn Error>)
+                .map_err(|e| Box::new(CustomError(e.to_string())) as Box<dyn Error>)
         } else {
             // Process transaction within the same shard
-            sharding_manager.process_transaction(from_shard.try_into().unwrap(), transaction)
-                .map_err(|e| Box::new(CustomError(e)) as Box<dyn Error>)
+            sharding_manager.process_transaction(from_shard, transaction)
+                .map_err(|e| Box::new(CustomError(e.to_string())) as Box<dyn Error>)
         }
     }
 

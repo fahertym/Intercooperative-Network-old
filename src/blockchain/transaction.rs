@@ -1,3 +1,5 @@
+// src/blockchain/transaction.rs
+
 use serde::{Deserialize, Serialize};
 use ed25519_dalek::{Keypair, PublicKey, Signature, Signer, Verifier};
 use crate::currency::CurrencyType;
@@ -48,13 +50,15 @@ impl Transaction {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        format!(
-            "{}{}{}:{:?}:{}",
-            self.from,
-            self.to,
-            self.amount,
-            self.currency_type,
-            self.gas_limit
-        ).into_bytes()
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(self.from.as_bytes());
+        bytes.extend_from_slice(self.to.as_bytes());
+        bytes.extend_from_slice(&self.amount.to_le_bytes());
+        bytes.extend_from_slice(&self.gas_limit.to_le_bytes());
+        bytes.extend_from_slice(&serde_json::to_vec(&self.currency_type).unwrap());
+        if let Some(contract_id) = &self.smart_contract_id {
+            bytes.extend_from_slice(contract_id.as_bytes());
+        }
+        bytes
     }
 }

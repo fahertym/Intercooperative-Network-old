@@ -1,5 +1,3 @@
-// src/main.rs
-
 use log::{info, warn};
 use chrono::Utc;
 use std::collections::HashMap;
@@ -8,13 +6,13 @@ use std::error::Error;
 use icn_node::blockchain::Transaction;
 use icn_node::consensus::PoCConsensus;
 use icn_node::currency::CurrencyType;
-use icn_node::governance::DemocraticSystem;
+use icn_node::governance::{DemocraticSystem, ProposalType, ProposalCategory};
+use icn_node::governance::democracy::ProposalStatus;
 use icn_node::identity::DecentralizedIdentity;
 use icn_node::network::Network;
 use icn_node::network::node::{Node, NodeType};
 use icn_node::vm::CSCLCompiler;
 use icn_node::IcnNode;
-use icn_node::governance::democracy::ProposalStatus;
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -59,7 +57,7 @@ fn process_initial_transactions(node: &IcnNode) -> Result<(), Box<dyn Error>> {
         bob_did.id.clone(),
         100.0,
         CurrencyType::BasicNeeds,
-        1000
+        1000,
     );
 
     node.blockchain.write().unwrap().add_transaction(tx)?;
@@ -80,8 +78,8 @@ fn create_and_vote_on_proposal(democratic_system: &mut DemocraticSystem) -> Resu
         "Create a community garden in the local park".to_string(),
         "Alice".to_string(),
         chrono::Duration::weeks(1),
-        icn_node::governance::ProposalType::Constitutional,
-        icn_node::governance::ProposalCategory::Economic,
+        ProposalType::Constitutional,
+        ProposalCategory::Economic,
         0.51,
         Some(Utc::now() + chrono::Duration::days(30)),
     )?;
@@ -128,7 +126,7 @@ fn simulate_cross_shard_transaction(node: &IcnNode) -> Result<(), Box<dyn Error>
         "Bob".to_string(),
         500.0,
         CurrencyType::BasicNeeds,
-        1000
+        1000,
     );
 
     node.process_cross_shard_transaction(&transaction)?;
@@ -162,7 +160,6 @@ fn print_final_state(node: &IcnNode, consensus: &PoCConsensus, democratic_system
     info!("Number of shards: {}", node.sharding_manager.read().unwrap().get_shard_count());
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,14 +179,14 @@ mod tests {
     #[test]
     fn test_packet_processing() {
         let node = IcnNode::new();
-        let interest_packet = Packet {
-            packet_type: PacketType::Interest,
+        let interest_packet = icn_node::network::network::Packet {
+            packet_type: icn_node::network::network::PacketType::Interest,
             name: "test_data".to_string(),
             content: vec![],
         };
 
-        let data_packet = Packet {
-            packet_type: PacketType::Data,
+        let data_packet = icn_node::network::network::Packet {
+            packet_type: icn_node::network::network::PacketType::Data,
             name: "test_data".to_string(),
             content: vec![1, 2, 3, 4],
         };
@@ -197,7 +194,7 @@ mod tests {
         node.content_store.write().unwrap().add(data_packet.name.clone(), data_packet.content.clone());
         
         // Simulating packet processing
-        if let PacketType::Interest = interest_packet.packet_type {
+        if let icn_node::network::network::PacketType::Interest = interest_packet.packet_type {
             let content = node.content_store.read().unwrap().get(&interest_packet.name);
             assert!(content.is_some());
         }
@@ -225,7 +222,7 @@ mod tests {
             "Bob".to_string(),
             500.0,
             CurrencyType::BasicNeeds,
-            1000
+            1000,
         );
         transaction.sign(&keypair).unwrap();
 

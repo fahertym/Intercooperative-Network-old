@@ -1,5 +1,3 @@
-// File: src/sharding/cross_shard_communication.rs
-
 use crate::blockchain::Transaction;
 use crate::sharding::ShardingManager;
 use std::collections::HashMap;
@@ -67,7 +65,7 @@ impl CrossShardCommunicator {
             cross_shard_tx.from_shard,
             cross_shard_tx.to_shard,
             &cross_shard_tx.transaction,
-        )?;
+        ).map_err(|e| e.to_string())?;
 
         cross_shard_tx.status = CrossShardTransactionStatus::Completed;
         Ok(())
@@ -85,7 +83,7 @@ impl CrossShardCommunicator {
             &transaction.to,
             transaction.currency_type.clone(),
             transaction.amount
-        )?;
+        ).map_err(|e| e.to_string())?;
 
         println!("Received cross-shard transaction from shard {} to shard {}", from_shard, to_shard);
         println!("Transaction details: {:?}", transaction);

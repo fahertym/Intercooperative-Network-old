@@ -1,5 +1,3 @@
-// src/blockchain/mod.rs
-
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use crate::currency::CurrencyType;
@@ -43,7 +41,7 @@ impl Blockchain {
         Ok(())
     }
 
-    pub fn create_block(&mut self, author: String) -> Result<()> {
+    pub fn create_block(&mut self, _author: String) -> Result<()> {
         let previous_block = self.chain.last().ok_or(Error::BlockchainError("No previous block found".to_string()))?;
         let new_block = Block::new(
             self.chain.len() as u64,
@@ -120,12 +118,12 @@ impl Blockchain {
         Ok(())
     }
 
-    pub fn transfer_asset_token(&mut self, asset_id: &str, new_owner: &str) -> Result<()> {
+    pub fn transfer_asset_token(&mut self, _asset_id: &str, _new_owner: &str) -> Result<()> {
         // Implement asset token transfer logic here
         Ok(())
     }
 
-    pub fn transfer_bond(&mut self, bond_id: &str, new_owner: &str) -> Result<()> {
+    pub fn transfer_bond(&mut self, _bond_id: &str, _new_owner: &str) -> Result<()> {
         // Implement bond transfer logic here
         Ok(())
     }
@@ -201,19 +199,19 @@ mod tests {
         blockchain.add_transaction(transaction).unwrap();
         blockchain.create_block("Miner1".to_string()).unwrap();
 
-        assert!(blockchain.validate_chain());
+        assert!(blockchain.validate_chain().is_ok());
 
         // Tamper with a block
         blockchain.chain[1].hash = "tampered_hash".to_string();
-        assert!(!blockchain.validate_chain());
+        assert!(blockchain.validate_chain().is_err());
     }
 
     #[test]
     fn test_asset_tokens_and_bonds() {
         let mut blockchain = Blockchain::new();
         
-        blockchain.add_asset_token("ASSET1".to_string(), CurrencyType::AssetToken("ASSET1".to_string()));
-        blockchain.add_bond("BOND1".to_string(), CurrencyType::Bond("BOND1".to_string()));
+        blockchain.add_asset_token("ASSET1".to_string(), CurrencyType::AssetToken("ASSET1".to_string())).unwrap();
+        blockchain.add_bond("BOND1".to_string(), CurrencyType::Bond("BOND1".to_string())).unwrap();
 
         assert!(blockchain.get_asset_token("ASSET1").is_some());
         assert!(blockchain.get_bond("BOND1").is_some());

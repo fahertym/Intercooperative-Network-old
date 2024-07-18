@@ -1,11 +1,15 @@
 use crate::blockchain::{Blockchain, Transaction};
 use crate::governance::DemocraticSystem;
 use crate::governance::democracy::ProposalStatus as DemocracyProposalStatus;
+// Remove this line
+// use crate::error::Error;
 
 use serde::{Deserialize, Serialize, Serializer, Deserializer};
 use tokio::sync::RwLock;
 use std::sync::Arc;
 use chrono::{DateTime, Utc, Duration};
+
+// The rest of the file remains the same...
 
 #[derive(Serialize, Deserialize)]
 pub struct ApiResponse<T> {
@@ -54,7 +58,7 @@ impl ApiLayer {
             Err(e) => ApiResponse {
                 success: false,
                 data: None,
-                error: Some(e),
+                error: Some(e.to_string()),
             },
         }
     }
@@ -89,7 +93,7 @@ impl ApiLayer {
             Err(e) => ApiResponse {
                 success: false,
                 data: None,
-                error: Some(e),
+                error: Some(e.to_string()),
             },
         }
     }
@@ -105,7 +109,7 @@ impl ApiLayer {
             Err(e) => ApiResponse {
                 success: false,
                 data: None,
-                error: Some(e),
+                error: Some(e.to_string()),
             },
         }
     }
@@ -224,6 +228,4 @@ mod tests {
         assert!(balance.success);
         assert_eq!(balance.data.unwrap(), 0.0); // Initial balance
     }
-
-    // Add more tests for other API methods...
 }
